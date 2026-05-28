@@ -1,0 +1,48 @@
+{
+  "realm": "security-lab",
+  "enabled": true,
+  "displayName": "Security Lab",
+  "registrationAllowed": false,
+  "clients": [
+    {
+      "clientId": "vulnerable-client",
+      "name": "Vulnerable Client",
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "https://jwt.io/*"
+      ],
+      "webOrigins": [
+        "https://jwt.io"
+      ],
+      "attributes": {
+        "access.token.lifespan": "36000"
+      }
+    },
+    {
+      "clientId": "secure-client",
+      "name": "Secure Client",
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "https://secure.example.com/callback"
+      ],
+      "webOrigins": [
+        "https://secure.example.com"
+      ],
+      "attributes": {
+        "access.token.lifespan": "300",
+        "pkce.code.challenge.method": "S256",
+        "pkce.code.challenge.required": "true"
+      }
+    }
+  ]
+}

@@ -1,0 +1,105 @@
+{
+  "info": {
+    "name": "OIDC Security Lab",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "OIDC Implicit Flow (Vulnerable)",
+      "item": [
+        {
+          "name": "Implicit Flow - Authorization Request",
+          "request": {
+            "method": "GET",
+            "description": "Open in a browser to retrieve an access token via the implicit flow.",
+            "url": "{{keycloak_base_url}}/realms/{{realm}}/protocol/openid-connect/auth?client_id={{client_id_vulnerable}}&response_type=token&scope={{scope}}&redirect_uri={{redirect_uri_vulnerable}}&nonce={{nonce}}&state={{state}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "OIDC Authorization Code Flow + PKCE (Secure)",
+      "item": [
+        {
+          "name": "PKCE - Authorization Request",
+          "request": {
+            "method": "GET",
+            "description": "Open in a browser. Use code_challenge derived from code_verifier (S256).",
+            "url": "{{keycloak_base_url}}/realms/{{realm}}/protocol/openid-connect/auth?client_id={{client_id_secure}}&response_type=code&scope={{scope}}&redirect_uri={{redirect_uri_secure}}&code_challenge={{code_challenge}}&code_challenge_method=S256&state={{state}}"
+          }
+        },
+        {
+          "name": "PKCE - Token Exchange",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{keycloak_base_url}}/realms/{{realm}}/protocol/openid-connect/token",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {"key": "grant_type", "value": "authorization_code"},
+                {"key": "client_id", "value": "{{client_id_secure}}"},
+                {"key": "code", "value": "{{authorization_code}}"},
+                {"key": "redirect_uri", "value": "{{redirect_uri_secure}}"},
+                {"key": "code_verifier", "value": "{{code_verifier}}"}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Resource Servers",
+      "item": [
+        {
+          "name": "Vulnerable RS - Admin Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": "{{vulnerable_rs_base_url}}/api/v1/admin/dashboard"
+          }
+        },
+        {
+          "name": "Secure RS - Admin Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": "{{secure_rs_base_url}}/api/v1/admin/dashboard"
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {"key": "keycloak_base_url", "value": "http://localhost:8080"},
+    {"key": "realm", "value": "security-lab"},
+    {"key": "client_id_vulnerable", "value": "vulnerable-client"},
+    {"key": "client_id_secure", "value": "secure-client"},
+    {"key": "redirect_uri_vulnerable", "value": "https://jwt.io/"},
+    {"key": "redirect_uri_secure", "value": "https://secure.example.com/callback"},
+    {"key": "scope", "value": "openid"},
+    {"key": "nonce", "value": "lab-nonce"},
+    {"key": "state", "value": "lab-state"},
+    {"key": "code_verifier", "value": "REPLACE_ME"},
+    {"key": "code_challenge", "value": "REPLACE_ME"},
+    {"key": "authorization_code", "value": "REPLACE_ME"},
+    {"key": "access_token", "value": "REPLACE_ME"},
+    {"key": "vulnerable_rs_base_url", "value": "http://localhost:8000"},
+    {"key": "secure_rs_base_url", "value": "http://localhost:8001"}
+  ]
+}

@@ -1,0 +1,1 @@
+"""Vulnerable resource server package."""

@@ -1,0 +1,1 @@
+"""Secure resource server package."""

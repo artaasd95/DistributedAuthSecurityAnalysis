@@ -3,10 +3,10 @@
 from fastapi import FastAPI
 from starlette.middleware import Middleware
 
-from app.core.auth import VulnerableJwtAuth
-from app.middleware.auth import VulnerableAuthMiddleware
-from app.routes.admin import AdminRouter
-from app.services.admin_service import AdminService
+from vulnerable_server.core.auth import VulnerableJwtAuth
+from vulnerable_server.middleware.auth import VulnerableAuthMiddleware
+from vulnerable_server.routes.admin import AdminRouter
+from vulnerable_server.services.admin_service import AdminService
 
 
 def create_app() -> FastAPI:

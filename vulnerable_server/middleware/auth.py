@@ -6,7 +6,7 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response
 
-from app.core.auth import VulnerableJwtAuth
+from vulnerable_server.core.auth import VulnerableJwtAuth
 
 
 class VulnerableAuthMiddleware(BaseHTTPMiddleware):

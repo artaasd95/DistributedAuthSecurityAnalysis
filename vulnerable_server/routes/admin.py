@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter, Request
 
-from app.models.schemas import AdminDashboardResponse
-from app.services.admin_service import AdminService
+from vulnerable_server.models.schemas import AdminDashboardResponse
+from vulnerable_server.services.admin_service import AdminService
 
 
 class AdminRouter:

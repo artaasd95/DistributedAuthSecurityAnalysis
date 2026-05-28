@@ -2,7 +2,7 @@
 
 from typing import Any, Dict
 
-from app.models.schemas import AdminDashboardResponse
+from vulnerable_server.models.schemas import AdminDashboardResponse
 
 
 class AdminService:

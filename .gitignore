@@ -1,1 +1,21 @@
 /Docs
+
+# dotenv files with secrets
+.env
+.env.*
+
+# local DB data if you switch to bind mounts
+postgres-data/
+db-data/
+
+# exported realms that may include secrets
+realm-export*.json
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

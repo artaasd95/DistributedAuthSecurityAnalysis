@@ -3,6 +3,8 @@
   "enabled": true,
   "displayName": "Security Lab",
   "registrationAllowed": false,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
   "clients": [
     {
       "clientId": "vulnerable-client",

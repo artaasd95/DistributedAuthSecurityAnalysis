@@ -73,9 +73,9 @@ uvicorn secure_server.main:app --reload --port 8001
 Optional environment overrides for strict validation:
 
 ```text
-KEYCLOAK_JWKS_URL=http://localhost:8080/realms/security-lab/.well-known/jwks.json
+KEYCLOAK_JWKS_URL=http://localhost:8080/realms/security-lab/protocol/openid-connect/certs
 KEYCLOAK_ISSUER=http://localhost:8080/realms/security-lab
-KEYCLOAK_AUDIENCE=secure-client
+KEYCLOAK_AUDIENCE=account
 ```
 
 ## Attack simulation (alg=none)
@@ -102,10 +102,14 @@ You can provide tokens directly or let the suite fetch them from Keycloak:
 - `SECURE_BASE_URL` (default: `http://localhost:8001`)
 - `VALID_JWT` (optional, preferred for fast runs)
 - `EXPIRED_RS256_JWT` (optional, preferred for expiry validation)
-- `KEYCLOAK_TOKEN_URL` (e.g., `http://localhost:8080/realms/security-lab/protocol/openid-connect/token`)
-- `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET` (optional), `KEYCLOAK_USERNAME`, `KEYCLOAK_PASSWORD`
+- `KEYCLOAK_BASE_URL` (default: `http://localhost:8080`)
+- `KEYCLOAK_REALM` (default: `security-lab`)
+- `KEYCLOAK_CLIENT_ID` (default: `secure-client`)
+- `KEYCLOAK_REDIRECT_URI` (default: `https://secure.example.com/callback`)
+- `KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD`
+- `KEYCLOAK_TEST_USERNAME` / `KEYCLOAK_TEST_PASSWORD`
 - `KEYCLOAK_SCOPE` (default: `openid`)
-- `EXPIRED_WAIT_SECONDS` (only if you want the test to wait for token expiry)
+- `REQUEST_TIMEOUT_SECONDS` (default: `10`)
 
 Run the tests:
 
@@ -121,6 +125,16 @@ Import `postman/oidc-security-lab.postman_collection.json` and set collection va
 - `redirect_uri_vulnerable`, `redirect_uri_secure`
 - `code_verifier`, `code_challenge`, `authorization_code`, `access_token`
 - `vulnerable_rs_base_url`, `secure_rs_base_url`
+
+## jwt.io and curl usage
+
+The vulnerable client uses `https://jwt.io/*` as its redirect URI so you can inspect tokens directly in jwt.io.
+For API-level demonstrations, you can also use curl:
+
+```text
+curl -H "Authorization: Bearer <forged_jwt>" http://localhost:8000/api/v1/admin/dashboard
+curl -H "Authorization: Bearer <forged_jwt>" http://localhost:8001/api/v1/admin/dashboard
+```
 
 ## Security note
 

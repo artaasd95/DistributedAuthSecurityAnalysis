@@ -3,32 +3,41 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import html
 import os
+import re
 import time
-from typing import Optional
+from typing import Dict, Optional, Tuple
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 import pytest
 import requests
 
-from tests.helpers import forge_alg_none_token
+from tests.helpers import (
+    forge_alg_none_token,
+    generate_code_challenge,
+    generate_code_verifier,
+)
 
 
 @dataclass(frozen=True)
-class TestConfig:
+class LabConfig:
     """Runtime configuration for integration tests."""
 
     vulnerable_base_url: str
     secure_base_url: str
     valid_jwt: Optional[str]
     expired_jwt: Optional[str]
-    keycloak_token_url: Optional[str]
-    keycloak_client_id: Optional[str]
-    keycloak_client_secret: Optional[str]
-    keycloak_username: Optional[str]
-    keycloak_password: Optional[str]
+    keycloak_base_url: str
+    keycloak_realm: str
+    keycloak_client_id: str
+    keycloak_redirect_uri: str
     keycloak_scope: str
+    keycloak_admin_user: str
+    keycloak_admin_password: str
+    keycloak_test_username: str
+    keycloak_test_password: str
     request_timeout: int
-    expired_wait_seconds: int
 
 
 @dataclass(frozen=True)
@@ -44,80 +53,309 @@ def _read_env(name: str) -> Optional[str]:
     return value if value else None
 
 
-def _load_config() -> TestConfig:
-    return TestConfig(
+def _load_config() -> LabConfig:
+    return LabConfig(
         vulnerable_base_url=os.getenv("VULNERABLE_BASE_URL", "http://localhost:8000").rstrip("/"),
         secure_base_url=os.getenv("SECURE_BASE_URL", "http://localhost:8001").rstrip("/"),
         valid_jwt=_read_env("VALID_JWT"),
         expired_jwt=_read_env("EXPIRED_RS256_JWT"),
-        keycloak_token_url=_read_env("KEYCLOAK_TOKEN_URL"),
-        keycloak_client_id=_read_env("KEYCLOAK_CLIENT_ID"),
-        keycloak_client_secret=_read_env("KEYCLOAK_CLIENT_SECRET"),
-        keycloak_username=_read_env("KEYCLOAK_USERNAME"),
-        keycloak_password=_read_env("KEYCLOAK_PASSWORD"),
+        keycloak_base_url=os.getenv("KEYCLOAK_BASE_URL", "http://localhost:8080").rstrip("/"),
+        keycloak_realm=os.getenv("KEYCLOAK_REALM", "security-lab"),
+        keycloak_client_id=os.getenv("KEYCLOAK_CLIENT_ID", "secure-client"),
+        keycloak_redirect_uri=os.getenv(
+            "KEYCLOAK_REDIRECT_URI",
+            "https://secure.example.com/callback",
+        ),
         keycloak_scope=os.getenv("KEYCLOAK_SCOPE", "openid"),
+        keycloak_admin_user=os.getenv("KEYCLOAK_ADMIN_USER", "kcadmin"),
+        keycloak_admin_password=os.getenv(
+            "KEYCLOAK_ADMIN_PASSWORD",
+            "ChangeMe-Strong-Admin-2026!",
+        ),
+        keycloak_test_username=os.getenv("KEYCLOAK_TEST_USERNAME", "lab-user"),
+        keycloak_test_password=os.getenv(
+            "KEYCLOAK_TEST_PASSWORD",
+            "Lab-User-Password-2026!",
+        ),
         request_timeout=int(os.getenv("REQUEST_TIMEOUT_SECONDS", "10")),
-        expired_wait_seconds=int(os.getenv("EXPIRED_WAIT_SECONDS", "0")),
     )
 
 
-def _fetch_token_with_password_grant(config: TestConfig) -> Optional[TokenResponse]:
-    if not all(
-        [
-            config.keycloak_token_url,
-            config.keycloak_client_id,
-            config.keycloak_username,
-            config.keycloak_password,
-        ]
-    ):
-        return None
+def _token_url(config: LabConfig) -> str:
+    return (
+        f"{config.keycloak_base_url}/realms/{config.keycloak_realm}/"
+        "protocol/openid-connect/token"
+    )
 
+
+def _auth_url(config: LabConfig) -> str:
+    return (
+        f"{config.keycloak_base_url}/realms/{config.keycloak_realm}/"
+        "protocol/openid-connect/auth"
+    )
+
+
+def _admin_token_url(config: LabConfig) -> str:
+    return f"{config.keycloak_base_url}/realms/master/protocol/openid-connect/token"
+
+
+def _admin_headers(token: str) -> Dict[str, str]:
+    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+
+def _get_admin_token(config: LabConfig) -> str:
     payload = {
         "grant_type": "password",
-        "client_id": config.keycloak_client_id,
-        "username": config.keycloak_username,
-        "password": config.keycloak_password,
-        "scope": config.keycloak_scope,
+        "client_id": "admin-cli",
+        "username": config.keycloak_admin_user,
+        "password": config.keycloak_admin_password,
     }
-    if config.keycloak_client_secret:
-        payload["client_secret"] = config.keycloak_client_secret
-
     response = requests.post(
-        config.keycloak_token_url,
+        _admin_token_url(config),
         data=payload,
         timeout=config.request_timeout,
     )
     if response.status_code != 200:
         pytest.fail(
-            "Keycloak token request failed. "
+            "Failed to obtain Keycloak admin token. "
             f"Status: {response.status_code}. Body: {response.text}"
         )
 
     try:
         data = response.json()
     except ValueError as exc:
-        pytest.fail(f"Token endpoint returned non-JSON data: {exc}")
+        pytest.fail(f"Admin token response was not JSON: {exc}")
+
+    token = data.get("access_token")
+    if not token:
+        pytest.fail("Admin token response missing access_token.")
+
+    return token
+
+
+def _find_user_id(config: LabConfig, admin_token: str) -> Optional[str]:
+    url = f"{config.keycloak_base_url}/admin/realms/{config.keycloak_realm}/users"
+    response = requests.get(
+        url,
+        params={"username": config.keycloak_test_username},
+        headers=_admin_headers(admin_token),
+        timeout=config.request_timeout,
+    )
+    if response.status_code != 200:
+        pytest.fail(
+            "Failed to query Keycloak users. "
+            f"Status: {response.status_code}. Body: {response.text}"
+        )
+
+    users = response.json()
+    if not users:
+        return None
+    return users[0].get("id")
+
+
+def _create_user(config: LabConfig, admin_token: str) -> str:
+    url = f"{config.keycloak_base_url}/admin/realms/{config.keycloak_realm}/users"
+    payload = {
+        "username": config.keycloak_test_username,
+        "enabled": True,
+    }
+    response = requests.post(
+        url,
+        json=payload,
+        headers=_admin_headers(admin_token),
+        timeout=config.request_timeout,
+    )
+    if response.status_code not in {201, 204}:
+        pytest.fail(
+            "Failed to create test user. "
+            f"Status: {response.status_code}. Body: {response.text}"
+        )
+
+    user_id = _find_user_id(config, admin_token)
+    if not user_id:
+        pytest.fail("Unable to locate newly created test user.")
+    return user_id
+
+
+def _set_user_password(config: LabConfig, admin_token: str, user_id: str) -> None:
+    url = (
+        f"{config.keycloak_base_url}/admin/realms/{config.keycloak_realm}"
+        f"/users/{user_id}/reset-password"
+    )
+    payload = {
+        "type": "password",
+        "value": config.keycloak_test_password,
+        "temporary": False,
+    }
+    response = requests.put(
+        url,
+        json=payload,
+        headers=_admin_headers(admin_token),
+        timeout=config.request_timeout,
+    )
+    if response.status_code not in {204, 200}:
+        pytest.fail(
+            "Failed to set test user password. "
+            f"Status: {response.status_code}. Body: {response.text}"
+        )
+
+
+def _ensure_test_user(config: LabConfig) -> None:
+    admin_token = _get_admin_token(config)
+    user_id = _find_user_id(config, admin_token)
+    if not user_id:
+        user_id = _create_user(config, admin_token)
+    _set_user_password(config, admin_token, user_id)
+
+
+def _extract_form_action(html_text: str) -> Optional[str]:
+    match = re.search(r'action="([^"]+)"', html_text)
+    if not match:
+        return None
+    return html.unescape(match.group(1))
+
+
+def _perform_pkce_login(config: LabConfig) -> TokenResponse:
+    session = requests.Session()
+    verifier = generate_code_verifier()
+    challenge = generate_code_challenge(verifier)
+
+    params = {
+        "client_id": config.keycloak_client_id,
+        "response_type": "code",
+        "scope": config.keycloak_scope,
+        "redirect_uri": config.keycloak_redirect_uri,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+        "state": "lab-state",
+    }
+
+    auth_request = session.get(
+        _auth_url(config),
+        params=params,
+        timeout=config.request_timeout,
+        allow_redirects=True,
+    )
+    if auth_request.status_code != 200:
+        pytest.fail(
+            "Authorization request failed. "
+            f"Status: {auth_request.status_code}. Body: {auth_request.text}"
+        )
+
+    action_url = _extract_form_action(auth_request.text)
+    if not action_url:
+        pytest.fail("Unable to locate Keycloak login form action URL.")
+
+    if action_url.startswith("/"):
+        action_url = urljoin(config.keycloak_base_url, action_url)
+
+    login_payload = {
+        "username": config.keycloak_test_username,
+        "password": config.keycloak_test_password,
+        "credentialId": "",
+    }
+    login_response = session.post(
+        action_url,
+        data=login_payload,
+        timeout=config.request_timeout,
+        allow_redirects=False,
+    )
+
+    if login_response.status_code not in {302, 303}:
+        pytest.fail(
+            "Login failed. "
+            f"Status: {login_response.status_code}. Body: {login_response.text}"
+        )
+
+    location = login_response.headers.get("Location", "")
+    if not location:
+        pytest.fail("Login response missing redirect location with auth code.")
+
+    query = urlparse(location).query
+    code_list = parse_qs(query).get("code")
+    if not code_list:
+        pytest.fail("Authorization code missing from redirect URL.")
+
+    code = code_list[0]
+    token_response = session.post(
+        _token_url(config),
+        data={
+            "grant_type": "authorization_code",
+            "client_id": config.keycloak_client_id,
+            "code": code,
+            "redirect_uri": config.keycloak_redirect_uri,
+            "code_verifier": verifier,
+        },
+        timeout=config.request_timeout,
+    )
+    if token_response.status_code != 200:
+        pytest.fail(
+            "Token exchange failed. "
+            f"Status: {token_response.status_code}. Body: {token_response.text}"
+        )
+
+    try:
+        data = token_response.json()
+    except ValueError as exc:
+        pytest.fail(f"Token exchange response was not JSON: {exc}")
 
     access_token = data.get("access_token")
     if not access_token:
-        pytest.fail("Token endpoint response missing access_token.")
+        pytest.fail("Token exchange response missing access_token.")
 
     expires_in = int(data.get("expires_in", 0))
     return TokenResponse(access_token=access_token, expires_in=expires_in)
 
 
+def _get_client_representation(config: LabConfig, admin_token: str) -> Dict[str, object]:
+    url = f"{config.keycloak_base_url}/admin/realms/{config.keycloak_realm}/clients"
+    response = requests.get(
+        url,
+        params={"clientId": config.keycloak_client_id},
+        headers=_admin_headers(admin_token),
+        timeout=config.request_timeout,
+    )
+    if response.status_code != 200:
+        pytest.fail(
+            "Failed to query Keycloak client. "
+            f"Status: {response.status_code}. Body: {response.text}"
+        )
+
+    clients = response.json()
+    if not clients:
+        pytest.fail("Secure client not found in Keycloak.")
+    return clients[0]
+
+
+def _update_client(config: LabConfig, admin_token: str, client_id: str, payload: Dict[str, object]) -> None:
+    url = f"{config.keycloak_base_url}/admin/realms/{config.keycloak_realm}/clients/{client_id}"
+    response = requests.put(
+        url,
+        json=payload,
+        headers=_admin_headers(admin_token),
+        timeout=config.request_timeout,
+    )
+    if response.status_code not in {204, 200}:
+        pytest.fail(
+            "Failed to update Keycloak client. "
+            f"Status: {response.status_code}. Body: {response.text}"
+        )
+
+
 @pytest.fixture(scope="session")
-def config() -> TestConfig:
+def config() -> LabConfig:
     """Provide test configuration loaded from environment variables."""
     return _load_config()
 
 
 @pytest.fixture(scope="session")
-def token_response(config: TestConfig) -> Optional[TokenResponse]:
-    """Return a token response from env or Keycloak if available."""
+def token_response(config: LabConfig) -> Optional[TokenResponse]:
+    """Return a token response from env or Keycloak using auth code + PKCE."""
     if config.valid_jwt:
         return TokenResponse(access_token=config.valid_jwt, expires_in=0)
-    return _fetch_token_with_password_grant(config)
+
+    _ensure_test_user(config)
+    return _perform_pkce_login(config)
 
 
 @pytest.fixture(scope="session")
@@ -138,29 +376,34 @@ def forged_token(valid_token: str) -> str:
 
 
 @pytest.fixture(scope="session")
-def expired_token(config: TestConfig, token_response: Optional[TokenResponse]) -> str:
+def expired_token(config: LabConfig) -> str:
     """Provide an expired but otherwise valid JWT for secure backend tests."""
     if config.expired_jwt:
         return config.expired_jwt
 
-    if token_response is None:
-        pytest.fail(
-            "Set EXPIRED_RS256_JWT or provide Keycloak credentials to fetch a token."
-        )
+    _ensure_test_user(config)
+    admin_token = _get_admin_token(config)
+    client = _get_client_representation(config, admin_token)
+    client_id = client.get("id")
+    if not client_id:
+        pytest.fail("Client id missing from Keycloak response.")
 
-    if config.expired_wait_seconds <= 0:
-        pytest.fail(
-            "Set EXPIRED_RS256_JWT or EXPIRED_WAIT_SECONDS to wait for token expiry."
-        )
+    attributes = dict(client.get("attributes") or {})
+    original_lifespan = attributes.get("access.token.lifespan")
+    attributes["access.token.lifespan"] = "1"
+    client["attributes"] = attributes
 
-    if token_response.expires_in <= 0:
-        pytest.fail("Token response missing expires_in; provide EXPIRED_RS256_JWT.")
+    _update_client(config, admin_token, str(client_id), client)
 
-    required_wait = token_response.expires_in + 5
-    if config.expired_wait_seconds < required_wait:
-        pytest.fail(
-            f"EXPIRED_WAIT_SECONDS must be >= {required_wait} to ensure token expiry."
-        )
-
-    time.sleep(config.expired_wait_seconds)
-    return token_response.access_token
+    try:
+        token_response = _perform_pkce_login(config)
+        time.sleep(2)
+        return token_response.access_token
+    finally:
+        attributes = dict(client.get("attributes") or {})
+        if original_lifespan is None:
+            attributes.pop("access.token.lifespan", None)
+        else:
+            attributes["access.token.lifespan"] = str(original_lifespan)
+        client["attributes"] = attributes
+        _update_client(config, admin_token, str(client_id), client)

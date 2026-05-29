@@ -222,6 +222,10 @@ def _clear_required_actions(config: LabConfig, admin_token: str, user_id: str) -
     profile["requiredActions"] = []
     if not profile.get("email"):
         profile["email"] = f"{config.keycloak_test_username}@example.com"
+    if not profile.get("firstName"):
+        profile["firstName"] = "Lab"
+    if not profile.get("lastName"):
+        profile["lastName"] = "User"
 
     update = requests.put(
         url,

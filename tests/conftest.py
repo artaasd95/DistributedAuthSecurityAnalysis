@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 import pytest
 import requests
+import jwt
 
 from tests.helpers import (
     forge_alg_none_token,
@@ -475,7 +476,23 @@ def expired_token(config: LabConfig) -> str:
 
     try:
         token_response = _perform_pkce_login(config)
-        time.sleep(2)
+        payload = jwt.decode(
+            token_response.access_token,
+            options={
+                "verify_signature": False,
+                "verify_aud": False,
+                "verify_iss": False,
+                "verify_exp": False,
+            },
+            algorithms=["RS256", "HS256", "none"],
+        )
+        exp = payload.get("exp")
+        if exp:
+            wait_seconds = max(0, int(exp) - int(time.time()) + 2)
+            if wait_seconds:
+                time.sleep(wait_seconds)
+        else:
+            time.sleep(2)
         return token_response.access_token
     finally:
         attributes = dict(client.get("attributes") or {})

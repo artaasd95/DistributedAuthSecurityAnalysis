@@ -200,12 +200,49 @@ def _set_user_password(config: LabConfig, admin_token: str, user_id: str) -> Non
         )
 
 
+def _clear_required_actions(config: LabConfig, admin_token: str, user_id: str) -> None:
+    url = (
+        f"{config.keycloak_base_url}/admin/realms/{config.keycloak_realm}"
+        f"/users/{user_id}"
+    )
+    response = requests.get(
+        url,
+        headers=_admin_headers(admin_token),
+        timeout=config.request_timeout,
+    )
+    if response.status_code != 200:
+        pytest.fail(
+            "Failed to fetch user profile. "
+            f"Status: {response.status_code}. Body: {response.text}"
+        )
+
+    profile = response.json()
+    profile["enabled"] = True
+    profile["emailVerified"] = True
+    profile["requiredActions"] = []
+    if not profile.get("email"):
+        profile["email"] = f"{config.keycloak_test_username}@example.com"
+
+    update = requests.put(
+        url,
+        json=profile,
+        headers=_admin_headers(admin_token),
+        timeout=config.request_timeout,
+    )
+    if update.status_code not in {204, 200}:
+        pytest.fail(
+            "Failed to update user profile. "
+            f"Status: {update.status_code}. Body: {update.text}"
+        )
+
+
 def _ensure_test_user(config: LabConfig) -> None:
     admin_token = _get_admin_token(config)
     user_id = _find_user_id(config, admin_token)
     if not user_id:
         user_id = _create_user(config, admin_token)
     _set_user_password(config, admin_token, user_id)
+    _clear_required_actions(config, admin_token, user_id)
 
 
 def _extract_form_action(html_text: str) -> Optional[str]:
@@ -213,6 +250,50 @@ def _extract_form_action(html_text: str) -> Optional[str]:
     if not match:
         return None
     return html.unescape(match.group(1))
+
+
+def _extract_form_fields(html_text: str) -> Dict[str, str]:
+    fields: Dict[str, str] = {}
+    inputs = re.findall(r"<input[^>]+>", html_text)
+    for inp in inputs:
+        name_match = re.search(r'name="([^"]+)"', inp)
+        if not name_match:
+            continue
+        value_match = re.search(r'value="([^"]*)"', inp)
+        fields[name_match.group(1)] = value_match.group(1) if value_match else ""
+    return fields
+
+
+def _get_login_page(session: requests.Session, config: LabConfig, params: Dict[str, str]) -> requests.Response:
+    response = session.get(
+        _auth_url(config),
+        params=params,
+        timeout=config.request_timeout,
+        allow_redirects=False,
+    )
+    if response.status_code == 200:
+        return response
+
+    if response.status_code in {302, 303}:
+        location = response.headers.get("Location", "")
+        if not location:
+            pytest.fail("Authorization redirect missing location header.")
+        if location.startswith("/"):
+            location = urljoin(config.keycloak_base_url, location)
+        if not location.startswith(config.keycloak_base_url):
+            pytest.fail("Authorization redirect did not return a login page.")
+        follow = session.get(location, timeout=config.request_timeout, allow_redirects=False)
+        if follow.status_code != 200:
+            pytest.fail(
+                "Failed to load login page. "
+                f"Status: {follow.status_code}. Body: {follow.text}"
+            )
+        return follow
+
+    pytest.fail(
+        "Authorization request failed. "
+        f"Status: {response.status_code}. Body: {response.text}"
+    )
 
 
 def _perform_pkce_login(config: LabConfig) -> TokenResponse:
@@ -230,17 +311,7 @@ def _perform_pkce_login(config: LabConfig) -> TokenResponse:
         "state": "lab-state",
     }
 
-    auth_request = session.get(
-        _auth_url(config),
-        params=params,
-        timeout=config.request_timeout,
-        allow_redirects=True,
-    )
-    if auth_request.status_code != 200:
-        pytest.fail(
-            "Authorization request failed. "
-            f"Status: {auth_request.status_code}. Body: {auth_request.text}"
-        )
+    auth_request = _get_login_page(session, config, params)
 
     action_url = _extract_form_action(auth_request.text)
     if not action_url:
@@ -249,11 +320,14 @@ def _perform_pkce_login(config: LabConfig) -> TokenResponse:
     if action_url.startswith("/"):
         action_url = urljoin(config.keycloak_base_url, action_url)
 
-    login_payload = {
-        "username": config.keycloak_test_username,
-        "password": config.keycloak_test_password,
-        "credentialId": "",
-    }
+    login_payload = _extract_form_fields(auth_request.text)
+    login_payload.update(
+        {
+            "username": config.keycloak_test_username,
+            "password": config.keycloak_test_password,
+            "credentialId": "",
+        }
+    )
     login_response = session.post(
         action_url,
         data=login_payload,

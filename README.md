@@ -8,27 +8,20 @@ Research-focused lab for demonstrating OAuth 2.0 and OpenID Connect (OIDC) weakn
 - Secure FastAPI resource server enforcing strict JWT validation via Keycloak JWKS.
 - Keycloak + Postgres Docker stack with a preloaded lab realm.
 - Attacker script, automated pytest suite, and a Postman collection.
-- Full technical report and reference materials under `Docs/`.
+- Full technical report and reference materials under [Docs/](Docs/).
 
 ## Project layout
 
-```
-.
-├── docker-compose.yml
-├── keycloak/
-│   └── realm-security-lab.json
-├── vulnerable_server/
-├── secure_server/
-├── scripts/
-│   └── attacker.py
-├── tests/
-├── postman/
-│   └── oidc-security-lab.postman_collection.json
-├── Docs/
-├── requirements.txt
-├── requirements-dev.txt
-└── .env (ignored)
-```
+- [docker-compose.yml](docker-compose.yml)
+- [keycloak/](keycloak/) (realm import: [keycloak/realm-security-lab.json](keycloak/realm-security-lab.json))
+- [vulnerable_server/](vulnerable_server/)
+- [secure_server/](secure_server/)
+- [scripts/](scripts/) (attacker: [scripts/attacker.py](scripts/attacker.py))
+- [tests/](tests/)
+- [postman/](postman/) (collection: [postman/oidc-security-lab.postman_collection.json](postman/oidc-security-lab.postman_collection.json))
+- [Docs/](Docs/)
+- [requirements.txt](requirements.txt)
+- [requirements-dev.txt](requirements-dev.txt)
 
 ## Prerequisites
 
@@ -37,7 +30,7 @@ Research-focused lab for demonstrating OAuth 2.0 and OpenID Connect (OIDC) weakn
 
 ## Quick start (Keycloak + Postgres)
 
-1. Create a local `.env` file (ignored by Git):
+1. Create a local environment file (ignored by Git):
 
    ```text
    KEYCLOAK_ADMIN=kcadmin
@@ -53,9 +46,11 @@ Research-focused lab for demonstrating OAuth 2.0 and OpenID Connect (OIDC) weakn
 
 3. Access Keycloak admin console at http://localhost:8080
 
-The realm `security-lab` is auto-imported from `keycloak/realm-security-lab.json`.
+The realm `security-lab` is auto-imported from [keycloak/realm-security-lab.json](keycloak/realm-security-lab.json).
 
 ## Run the vulnerable resource server (intentionally insecure)
+
+Install dependencies from [requirements.txt](requirements.txt), then run:
 
 ```text
 python -m venv .venv
@@ -67,6 +62,8 @@ uvicorn vulnerable_server.main:app --reload --port 8000
 This server accepts `alg=none` tokens by design for research and testing. Do **not** deploy it in production.
 
 ## Run the secure resource server
+
+Install dependencies from [requirements.txt](requirements.txt), then run:
 
 ```text
 python -m venv .venv
@@ -85,7 +82,7 @@ KEYCLOAK_AUDIENCE=account
 
 ## Attack simulation (alg=none)
 
-Use the attacker script to forge a token and demonstrate the vulnerable behavior:
+Use the attacker script at [scripts/attacker.py](scripts/attacker.py) to forge a token and demonstrate the vulnerable behavior:
 
 ```text
 python scripts/attacker.py --token <valid_jwt> --url http://localhost:8000/api/v1/admin/dashboard
@@ -93,7 +90,7 @@ python scripts/attacker.py --token <valid_jwt> --url http://localhost:8000/api/v
 
 ## Automated test suite (pytest)
 
-Install test dependencies:
+Install test dependencies from [requirements-dev.txt](requirements-dev.txt):
 
 ```text
 pip install -r requirements-dev.txt
@@ -122,7 +119,7 @@ pytest -v
 
 ## Postman collection
 
-Import `postman/oidc-security-lab.postman_collection.json` and set collection variables:
+Import [postman/oidc-security-lab.postman_collection.json](postman/oidc-security-lab.postman_collection.json) and set collection variables:
 
 - `keycloak_base_url`, `realm`, `client_id_vulnerable`, `client_id_secure`
 - `redirect_uri_vulnerable`, `redirect_uri_secure`
@@ -141,9 +138,9 @@ curl -H "Authorization: Bearer <forged_jwt>" http://localhost:8001/api/v1/admin/
 
 ## Documentation
 
-- Technical report: `Docs/report.pdf`
-- Source: `Docs/report.tex`
-- Reference materials: `Docs/References/`
+- Technical report: [Docs/report.pdf](Docs/report.pdf)
+- Source: [Docs/report.tex](Docs/report.tex)
+- Reference materials: [Docs/References/](Docs/References/)
 
 ## Safety and ethical use
 
@@ -151,4 +148,4 @@ This repository contains intentionally vulnerable components. Use only in isolat
 
 ## License
 
-GPL-3.0-only. See `LICENSE` for details.
+GPL-3.0-only. See [LICENSE](LICENSE) for details.

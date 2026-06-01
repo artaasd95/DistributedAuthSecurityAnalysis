@@ -1,10 +1,14 @@
 # Distributed Auth Security Analysis
 
-A local security lab for studying OAuth 2.0 and OpenID Connect (OIDC) weaknesses and hardening strategies. It ships with:
-- A **vulnerable** FastAPI resource server to demonstrate signature-bypass issues.
-- A **secure** FastAPI resource server enforcing strict JWT validation via Keycloak JWKS.
-- A Keycloak + Postgres Docker stack with a preloaded lab realm.
-- An attacker script, automated pytest suite, and a Postman collection.
+Research-focused lab for demonstrating OAuth 2.0 and OpenID Connect (OIDC) weaknesses and hardening strategies using Keycloak and FastAPI.
+
+## Highlights
+
+- Vulnerable FastAPI resource server to demonstrate signature-bypass issues.
+- Secure FastAPI resource server enforcing strict JWT validation via Keycloak JWKS.
+- Keycloak + Postgres Docker stack with a preloaded lab realm.
+- Attacker script, automated pytest suite, and a Postman collection.
+- Full technical report and reference materials under `Docs/`.
 
 ## Project layout
 
@@ -20,6 +24,7 @@ A local security lab for studying OAuth 2.0 and OpenID Connect (OIDC) weaknesses
 ├── tests/
 ├── postman/
 │   └── oidc-security-lab.postman_collection.json
+├── Docs/
 ├── requirements.txt
 ├── requirements-dev.txt
 └── .env (ignored)
@@ -32,7 +37,7 @@ A local security lab for studying OAuth 2.0 and OpenID Connect (OIDC) weaknesses
 
 ## Quick start (Keycloak + Postgres)
 
-1. Create a local `.env` file (this file is ignored by Git):
+1. Create a local `.env` file (ignored by Git):
 
    ```text
    KEYCLOAK_ADMIN=kcadmin
@@ -50,7 +55,7 @@ A local security lab for studying OAuth 2.0 and OpenID Connect (OIDC) weaknesses
 
 The realm `security-lab` is auto-imported from `keycloak/realm-security-lab.json`.
 
-## Running the vulnerable resource server (intentionally insecure)
+## Run the vulnerable resource server (intentionally insecure)
 
 ```text
 python -m venv .venv
@@ -61,7 +66,7 @@ uvicorn vulnerable_server.main:app --reload --port 8000
 
 This server accepts `alg=none` tokens by design for research and testing. Do **not** deploy it in production.
 
-## Running the secure resource server
+## Run the secure resource server
 
 ```text
 python -m venv .venv
@@ -94,9 +99,7 @@ Install test dependencies:
 pip install -r requirements-dev.txt
 ```
 
-### Environment variables for tests
-
-You can provide tokens directly or let the suite fetch them from Keycloak:
+Environment variables for tests:
 
 - `VULNERABLE_BASE_URL` (default: `http://localhost:8000`)
 - `SECURE_BASE_URL` (default: `http://localhost:8001`)
@@ -136,6 +139,16 @@ curl -H "Authorization: Bearer <forged_jwt>" http://localhost:8000/api/v1/admin/
 curl -H "Authorization: Bearer <forged_jwt>" http://localhost:8001/api/v1/admin/dashboard
 ```
 
-## Security note
+## Documentation
 
-The `vulnerable_server` package intentionally disables JWT signature verification to demonstrate real-world risks. Keep it isolated and never expose it outside a controlled lab environment.
+- Technical report: `Docs/report.pdf`
+- Source: `Docs/report.tex`
+- Reference materials: `Docs/References/`
+
+## Safety and ethical use
+
+This repository contains intentionally vulnerable components. Use only in isolated lab environments and do not expose the vulnerable server to untrusted networks.
+
+## License
+
+GPL-3.0-only. See `LICENSE` for details.

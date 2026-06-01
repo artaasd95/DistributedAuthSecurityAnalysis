@@ -1,36 +1,87 @@
 # Distributed Auth Security Analysis
 
-Research-focused lab for demonstrating OAuth 2.0 and OpenID Connect (OIDC) weaknesses and hardening strategies using Keycloak and FastAPI.
+This repository is a controlled lab for studying OAuth 2.0 and OpenID Connect security boundaries with Keycloak and FastAPI. It includes both intentionally vulnerable components and hardened counterparts so you can demonstrate attacks, validate defenses, and document the results in a repeatable way.
 
-## Highlights
+## Overview
 
-- Vulnerable FastAPI resource server to demonstrate signature-bypass issues.
-- Secure FastAPI resource server enforcing strict JWT validation via Keycloak JWKS.
-- Keycloak + Postgres Docker stack with a preloaded lab realm.
-- Attacker script, automated pytest suite, and a Postman collection.
-- Full technical report and reference materials under [Docs/](Docs/).
+The project is organized around three ideas:
 
-## Project layout
+- A deliberately vulnerable FastAPI resource server that accepts weak JWT validation patterns for research purposes.
+- A secure FastAPI resource server that validates tokens through Keycloak JWKS and strict claim checks.
+- A supporting lab stack with Keycloak, Postgres, automated tests, an attacker script, and a technical report.
 
-- [docker-compose.yml](docker-compose.yml)
-- [keycloak/](keycloak/) (realm import: [keycloak/realm-security-lab.json](keycloak/realm-security-lab.json))
-- [vulnerable_server/](vulnerable_server/)
-- [secure_server/](secure_server/)
-- [scripts/](scripts/) (attacker: [scripts/attacker.py](scripts/attacker.py))
-- [tests/](tests/)
-- [postman/](postman/) (collection: [postman/oidc-security-lab.postman_collection.json](postman/oidc-security-lab.postman_collection.json))
-- [Docs/](Docs/)
-- [requirements.txt](requirements.txt)
-- [requirements-dev.txt](requirements-dev.txt)
+## Learning Objectives
+
+- Demonstrate how JWT signature validation failures can break authorization boundaries.
+- Compare insecure and secure server behavior under identical request conditions.
+- Validate hardening controls with automated regression tests.
+- Provide a reproducible reference implementation for teaching and research.
+
+## Security Scope
+
+- In scope: OAuth 2.0 / OIDC token handling at the resource server boundary.
+- In scope: signature bypass (`alg=none`), expiry validation, and role enforcement.
+- Out of scope: production deployment hardening, advanced WAF controls, and SIEM integration.
+
+## Repository Layout
+
+```text
+DistributedAuthSecurityAnalysis/
+|- docker-compose.yml          # Keycloak + Postgres lab stack
+|- requirements.txt            # Runtime dependencies
+|- requirements-dev.txt        # Test and development dependencies
+|- README.md                   # Project overview and usage
+|- CONTRIBUTING.md             # Contribution workflow and standards
+|
+|- keycloak/
+|  |- realm-security-lab.json  # Realm import with lab clients and settings
+|
+|- vulnerable_server/          # Intentionally insecure resource server
+|  |- core/                    # Vulnerable JWT handling logic
+|  |- middleware/              # Insecure auth middleware
+|  |- routes/                  # API routes
+|  |- services/                # Business logic layer
+|  |- models/                  # Response schemas
+|  |- main.py                  # App entrypoint
+|
+|- secure_server/              # Hardened resource server
+|  |- core/                    # Secure JWT validation and settings
+|  |- middleware/              # Strict auth middleware
+|  |- dependencies/            # Route-level authorization guards
+|  |- routes/                  # API routes
+|  |- services/                # Business logic layer
+|  |- models/                  # Response schemas
+|  |- main.py                  # App entrypoint
+|
+|- scripts/
+|  |- attacker.py              # Token forgery / bypass demonstration tool
+|
+|- tests/
+|  |- conftest.py              # Shared fixtures and Keycloak test helpers
+|  |- test_unit_auth.py        # Unit tests for auth/config/dependencies
+|  |- test_unit_middleware.py  # Unit tests for middleware behavior
+|  |- test_security_flows.py   # End-to-end vulnerability regressions
+|
+|- postman/
+|  |- oidc-security-lab.postman_collection.json  # Manual API and OIDC flows
+|
+|- Docs/
+   |- README.md                # Documentation index and build notes
+   |- report.tex               # Technical report source
+   |- report.pdf               # Compiled report artifact
+   |- References/              # RFCs, OWASP, and supporting references
+```
+
+This layout intentionally keeps vulnerable and secure implementations separate, so attack and mitigation paths can be compared side by side without altering the overall architecture.
 
 ## Prerequisites
 
-- Docker + Docker Compose
-- Python 3.9+ (recommended)
+- Docker and Docker Compose
+- Python 3.9 or newer
 
-## Quick start (Keycloak + Postgres)
+## Quick Start
 
-1. Create a local environment file (ignored by Git):
+1. Create a local environment file with lab credentials:
 
    ```text
    KEYCLOAK_ADMIN=kcadmin
@@ -38,41 +89,49 @@ Research-focused lab for demonstrating OAuth 2.0 and OpenID Connect (OIDC) weakn
    POSTGRES_PASSWORD=ChangeMe-Strong-Db-2026!
    ```
 
-2. Start Keycloak and Postgres:
+2. Start the Keycloak and Postgres stack:
 
    ```text
    docker compose up -d
    ```
 
-3. Access Keycloak admin console at http://localhost:8080
+3. Open the Keycloak admin console at http://localhost:8080.
+4. Start the vulnerable API on port 8000.
+5. Start the secure API on port 8001.
 
-The realm `security-lab` is auto-imported from [keycloak/realm-security-lab.json](keycloak/realm-security-lab.json).
+The `security-lab` realm is imported automatically from [keycloak/realm-security-lab.json](keycloak/realm-security-lab.json).
 
-## Run the vulnerable resource server (intentionally insecure)
+## Typical Lab Workflow
 
-Install dependencies from [requirements.txt](requirements.txt), then run:
+1. Start infrastructure and both API variants.
+2. Obtain or generate a valid access token.
+3. Forge a token with [scripts/attacker.py](scripts/attacker.py).
+4. Compare responses from vulnerable and secure endpoints.
+5. Run the automated test suites to confirm expected behavior.
+
+## Running the Servers
+
+Install runtime dependencies first:
 
 ```text
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
+```
+
+Start the vulnerable server on port 8000:
+
+```text
 uvicorn vulnerable_server.main:app --reload --port 8000
 ```
 
-This server accepts `alg=none` tokens by design for research and testing. Do **not** deploy it in production.
-
-## Run the secure resource server
-
-Install dependencies from [requirements.txt](requirements.txt), then run:
+Start the secure server on port 8001:
 
 ```text
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
 uvicorn secure_server.main:app --reload --port 8001
 ```
 
-Optional environment overrides for strict validation:
+Optional validation overrides for the secure server:
 
 ```text
 KEYCLOAK_JWKS_URL=http://localhost:8080/realms/security-lab/protocol/openid-connect/certs
@@ -80,71 +139,96 @@ KEYCLOAK_ISSUER=http://localhost:8080/realms/security-lab
 KEYCLOAK_AUDIENCE=account
 ```
 
-## Attack simulation (alg=none)
+The vulnerable server is intentionally insecure and accepts `alg=none` tokens for demonstration purposes. Do not expose it outside an isolated lab network.
 
-Use the attacker script at [scripts/attacker.py](scripts/attacker.py) to forge a token and demonstrate the vulnerable behavior:
+## Attack Demonstration
+
+Use [scripts/attacker.py](scripts/attacker.py) to forge a token and show the signature-bypass issue end to end:
 
 ```text
 python scripts/attacker.py --token <valid_jwt> --url http://localhost:8000/api/v1/admin/dashboard
 ```
 
-## Automated test suite (pytest)
-
-Install test dependencies from [requirements-dev.txt](requirements-dev.txt):
-
-```text
-pip install -r requirements-dev.txt
-```
-
-Environment variables for tests:
-
-- `VULNERABLE_BASE_URL` (default: `http://localhost:8000`)
-- `SECURE_BASE_URL` (default: `http://localhost:8001`)
-- `VALID_JWT` (optional, preferred for fast runs)
-- `EXPIRED_RS256_JWT` (optional, preferred for expiry validation)
-- `KEYCLOAK_BASE_URL` (default: `http://localhost:8080`)
-- `KEYCLOAK_REALM` (default: `security-lab`)
-- `KEYCLOAK_CLIENT_ID` (default: `secure-client`)
-- `KEYCLOAK_REDIRECT_URI` (default: `https://secure.example.com/callback`)
-- `KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD`
-- `KEYCLOAK_TEST_USERNAME` / `KEYCLOAK_TEST_PASSWORD`
-- `KEYCLOAK_SCOPE` (default: `openid`)
-- `REQUEST_TIMEOUT_SECONDS` (default: `10`)
-
-Run the tests:
-
-```text
-pytest -v
-```
-
-## Postman collection
-
-Import [postman/oidc-security-lab.postman_collection.json](postman/oidc-security-lab.postman_collection.json) and set collection variables:
-
-- `keycloak_base_url`, `realm`, `client_id_vulnerable`, `client_id_secure`
-- `redirect_uri_vulnerable`, `redirect_uri_secure`
-- `code_verifier`, `code_challenge`, `authorization_code`, `access_token`
-- `vulnerable_rs_base_url`, `secure_rs_base_url`
-
-## jwt.io and curl usage
-
-The vulnerable client uses `https://jwt.io/*` as its redirect URI so you can inspect tokens directly in jwt.io.
-For API-level demonstrations, you can also use curl:
+You can also probe the resource servers directly with curl:
 
 ```text
 curl -H "Authorization: Bearer <forged_jwt>" http://localhost:8000/api/v1/admin/dashboard
 curl -H "Authorization: Bearer <forged_jwt>" http://localhost:8001/api/v1/admin/dashboard
 ```
 
+## Test Strategy
+
+Install the development dependencies from [requirements-dev.txt](requirements-dev.txt):
+
+```text
+pip install -r requirements-dev.txt
+```
+
+The test suite is split into two layers:
+
+- Unit tests for helpers, auth/config logic, middleware, services, and authorization dependencies.
+- Vulnerability and integration tests that validate forged-token, missing-auth, malformed-token, and expiry behavior against running services.
+
+Unit test files:
+
+- [tests/test_unit_auth.py](tests/test_unit_auth.py)
+- [tests/test_unit_helpers.py](tests/test_unit_helpers.py)
+- [tests/test_unit_middleware.py](tests/test_unit_middleware.py)
+- [tests/test_unit_services.py](tests/test_unit_services.py)
+
+Vulnerability and integration test file:
+
+- [tests/test_security_flows.py](tests/test_security_flows.py)
+
+Common environment variables for the integration tests:
+
+- `VULNERABLE_BASE_URL` - default `http://localhost:8000`
+- `SECURE_BASE_URL` - default `http://localhost:8001`
+- `VALID_JWT` - optional valid token for faster runs
+- `EXPIRED_RS256_JWT` - optional expired token for expiry checks
+- `KEYCLOAK_BASE_URL` - default `http://localhost:8080`
+- `KEYCLOAK_REALM` - default `security-lab`
+- `KEYCLOAK_CLIENT_ID` - default `secure-client`
+- `KEYCLOAK_REDIRECT_URI` - default `https://secure.example.com/callback`
+- `KEYCLOAK_ADMIN_USER` and `KEYCLOAK_ADMIN_PASSWORD`
+- `KEYCLOAK_TEST_USERNAME` and `KEYCLOAK_TEST_PASSWORD`
+- `KEYCLOAK_SCOPE` - default `openid`
+- `REQUEST_TIMEOUT_SECONDS` - default `10`
+
+Run the full suite with:
+
+```text
+python -m pytest -v
+```
+
+Run only unit tests:
+
+```text
+python -m pytest tests/test_unit_*.py -v
+```
+
+Run only vulnerability and integration flows:
+
+```text
+python -m pytest tests/test_security_flows.py -v
+```
+
 ## Documentation
 
-- Technical report: [Docs/report.pdf](Docs/report.pdf)
-- Source: [Docs/report.tex](Docs/report.tex)
-- Reference materials: [Docs/References/](Docs/References/)
+- Technical report source: [Docs/report.tex](Docs/report.tex)
+- Technical report PDF: [Docs/report.pdf](Docs/report.pdf)
+- Documentation index: [Docs/README.md](Docs/README.md)
+- Reference material: [Docs/References/](Docs/References/)
 
-## Safety and ethical use
+## Troubleshooting
 
-This repository contains intentionally vulnerable components. Use only in isolated lab environments and do not expose the vulnerable server to untrusted networks.
+- If Keycloak token acquisition fails in tests, verify admin credentials and realm import.
+- If secure server tests fail with JWKS errors, confirm the issuer and JWKS URLs match Keycloak realm settings.
+- If integration tests time out, ensure both API servers are running and reachable on configured ports.
+
+## Safety
+
+This repository is intended for isolated research and teaching environments only. The vulnerable service exists so the security failure can be demonstrated safely and reproducibly.
 
 ## License
 

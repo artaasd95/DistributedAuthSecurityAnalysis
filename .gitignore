@@ -1,4 +1,12 @@
-/Docs
+# Docs outputs (ignore only specified files)
+Docs/phase5_raw_data_export.md
+Docs/report.aux
+Docs/report.log
+Docs/report.out
+Docs/report.synctex.gz
+Docs/report.toc
+Docs/roadmap.txt
+Docs/*.docx
 
 # dotenv files with secrets
 .env

@@ -6,6 +6,8 @@ This folder contains the written material that supports the lab, including the t
 
 - [report.tex](report.tex) - the LaTeX source for the technical report
 - [report.pdf](report.pdf) - the compiled report, when generated locally
+- [PROJECT_TODO.md](PROJECT_TODO.md) - prioritized documentation and engineering tasks for the project
+- [PROFESSIONALIZATION_ACTION_PLAN.md](PROFESSIONALIZATION_ACTION_PLAN.md) - phased action plan to improve delivery quality and maintainability
 - [Phase 1 Theoretical Foundations of Modern Authentication and Authorization Protocols.pdf](Phase%201%20Theoretical%20Foundations%20of%20Modern%20Authentication%20and%20Authorization%20Protocols.pdf) - phase-specific deliverable for theoretical foundations
 - [Phase 2 Laboratory Environment Design and Tool Specification.pdf](Phase%202%20Laboratory%20Environment%20Design%20and%20Tool%20Specification.pdf) - phase-specific deliverable for lab environment and tooling
 - [Phase 3 Scenario Implementation and Attack Simulation.pdf](Phase%203%20Scenario%20Implementation%20and%20Attack%20Simulation.pdf) - phase-specific deliverable for implementation and attack workflow
@@ -16,6 +18,8 @@ This folder contains the written material that supports the lab, including the t
 
 - Primary report authoring source: [report.tex](report.tex)
 - Primary report output artifact: [report.pdf](report.pdf)
+- Project execution backlog: [PROJECT_TODO.md](PROJECT_TODO.md)
+- Project maturity roadmap: [PROFESSIONALIZATION_ACTION_PLAN.md](PROFESSIONALIZATION_ACTION_PLAN.md)
 - Phase deliverables for milestone review: the four phase PDFs listed above
 - Source standards and citations: [References/](References/)
 

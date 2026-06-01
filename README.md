@@ -134,10 +134,12 @@ uvicorn secure_server.main:app --reload --port 8001
 Optional validation overrides for the secure server:
 
 ```text
-KEYCLOAK_JWKS_URL=http://localhost:8080/realms/security-lab/protocol/openid-connect/certs
+KEYCLOAK_JWKS_URL=http://localhost:8080/realms/security-lab/.well-known/jwks.json
 KEYCLOAK_ISSUER=http://localhost:8080/realms/security-lab
-KEYCLOAK_AUDIENCE=account
+KEYCLOAK_AUDIENCE=secure-client
 ```
+
+These values are the secure server defaults from `secure_server/core/config.py`; set them only when your Keycloak realm or client settings differ.
 
 The vulnerable server is intentionally insecure and accepts `alg=none` tokens for demonstration purposes. Do not expose it outside an isolated lab network.
 

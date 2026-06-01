@@ -1,0 +1,502 @@
+\documentclass[11pt,a4paper]{report}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{titlesec}
+\usepackage{hyperref}
+
+\title{Distributed Authentication and Authorization Vulnerability Analysis: An Empirical Evaluation of Keycloak and FastAPI Implementations}
+\author{Pooria Madani Sani\\Department of Computer Engineering\\Ferdowsi University of Mashhad\\Network Security Advanced Laboratory Report}
+\date{May 2026}
+
+\definecolor{codebg}{RGB}{245,245,245}
+\definecolor{codecomment}{RGB}{96,96,96}
+\definecolor{codekeyword}{RGB}{0,68,136}
+\definecolor{codestring}{RGB}{163,21,21}
+
+\lstdefinestyle{academic}{
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\small,
+    commentstyle=\color{codecomment}\itshape,
+    keywordstyle=\color{codekeyword}\bfseries,
+    stringstyle=\color{codestring},
+    numberstyle=\tiny\color{codecomment},
+    numbers=left,
+    stepnumber=1,
+    numbersep=8pt,
+    frame=single,
+    rulecolor=\color{codecomment},
+    breaklines=true,
+    breakatwhitespace=false,
+    columns=fullflexible,
+    tabsize=2,
+    showstringspaces=false,
+    captionpos=b
+}
+
+\lstdefinelanguage{yaml}{
+    sensitive=false,
+    morecomment=[l]\#,
+    morestring=[b]",
+    morestring=[b]'
+}
+
+\lstset{style=academic}
+
+\titlespacing*{\chapter}{0pt}{0pt}{20pt}
+\titlespacing*{\section}{0pt}{12pt}{6pt}
+\titlespacing*{\subsection}{0pt}{10pt}{4pt}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=green,
+    urlcolor=cyan
+}
+
+\begin{document}
+
+\hypersetup{pageanchor=false}
+\pagenumbering{roman}
+\maketitle
+\hypersetup{pageanchor=true}
+
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+This technical report presents a distributed authentication and authorization security assessment focused on modern assertion-based protocols and their operational hardening. The study situates itself within the architectural shift from implicit credential sharing toward explicit delegation and claims-based identity exchange, as formalized in OAuth 2.0 and OpenID Connect, and emphasizes the heightened exposure surfaces of decentralized network architectures that depend on token issuance and validation across trust boundaries. An empirical testbed is constructed using a self-hosted Keycloak Identity Provider (IdP) coupled with a FastAPI service that represents a resource server in a multi-service environment. The evaluation intentionally explores structural cryptographic weaknesses, including the \texttt{alg: none} signature bypass vector and related token integrity failures, to quantify the impact of misconfiguration and weak validation logic on authorization outcomes. Defensive remediations are engineered and verified through a layered control strategy that includes Proof Key for Code Exchange (PKCE), Refresh Token Rotation (RTR), and stringent token lifespan constriction aligned with operational risk. The effectiveness of these countermeasures is validated programmatically through rigorous automated testing using \texttt{pytest}, ensuring that both negative and positive security assertions are enforced under repeatable conditions. The resulting analysis offers a precise, evidence-driven characterization of failure modes and mitigations for distributed identity systems.
+
+\tableofcontents
+\clearpage
+
+\hypersetup{pageanchor=false}
+\pagenumbering{arabic}
+\hypersetup{pageanchor=true}
+
+\chapter{Introduction and Scope}
+\label{chap:intro}
+
+\section{Document Overview and Research Motivation}
+\label{sec:overview}
+Distributed API ecosystems have become the dominant substrate for enterprise and academic software systems, yet their trust models are frequently assembled from heterogeneous services with divergent security controls. In this environment, the security of authentication and authorization flows is not only a local application concern but a systemic requirement that must hold across a network of endpoints, intermediaries, and identity providers. Legacy password-sharing schemes couple credential storage and validation to application code, creating brittle perimeter assumptions and a high-value compromise target. Modern authorization frameworks, particularly those standardized in RFC 6749, replace direct credential propagation with delegated token exchange, where authorization decisions are derived from verifiable claims and scope-bound access tokens. This transition introduces new cryptographic and architectural challenges, including robust token verification, cross-service trust alignment, and the prevention of downgrade or bypass vectors. The five-phase methodology that guides this report is detailed in Section \ref{sec:methodology} and establishes a rigorous empirical baseline for evaluating these risks.
+
+This report is deliberately synthesized from reviewed scholarly articles, technical reports, and standards documentation, and it is structured as a technical narrative that distills those sources into a reproducible security analysis. The bibliography at the end of the report provides direct local links to every referenced artifact in the References folder, preserving traceability between the analytical claims and their originating documents.
+
+\section{System Security Topology and Objectives}
+\label{sec:topology}
+The central objective of this laboratory research project is to assess the resilience of a distributed authentication and authorization topology when identity validation is externalized from application logic into a dedicated Identity Provider. This separation of concerns is fundamental to modern security architecture, where the IdP acts as a specialized authority responsible for credential verification, token issuance, and policy-aware authorization metadata. The testbed is intentionally designed to surface boundary conditions between the IdP, the FastAPI resource server, and the client-side authorization code flow, with a focus on how perimeter definitions evolve when security logic is distributed across trust domains. By evaluating how authorization is enforced at the service boundary, the project seeks to clarify the operational consequences of misconfiguration, weak validation, and insufficient token hygiene, while also demonstrating how a properly configured IdP reduces exposure by enforcing consistent identity validation outside of application code.
+
+\section{Methodology and Comprehensive 5-Phase Roadmap}
+\label{sec:methodology}
+The research trajectory is organized into a five-phase roadmap that aligns theoretical rigor with operational realism, and each phase is constructed to feed dependencies into the next. Phase 1 establishes the theoretical foundations and mathematical analysis required to interpret token lifecycles, signature verification semantics, and protocol invariants, which is essential for framing later attack hypotheses. Phase 2 operationalizes the laboratory testbed, emphasizing environment isolation, threat surface control, and reproducible deployment of the Keycloak IdP and FastAPI resource server so that later observations remain attributable and not confounded by infrastructure variability. Phase 3 then realizes vulnerabilities through controlled attack simulation, where flawed cryptographic assumptions and relaxed verification logic are exploited to observe authorization deviations under realistic client behaviors.
+
+Phase 4 applies defensive engineering and infrastructure hardening, translating the findings from attack simulation into concrete mitigations such as PKCE enforcement, refresh token rotation, and reduced token lifetimes that tighten the temporal and cryptographic bounds of access. Phase 5 completes the empirical loop by automating validation and evidence gathering with systematic testing, where exploit attempts and remediation checks are encoded into repeatable \texttt{pytest} suites to ensure that security properties are not regressions but enforced invariants. Together, these phases form a coherent methodology that couples protocol theory with implementation evidence while preserving a strict causal chain from design assumptions to measured security outcomes.
+
+
+\chapter{Theoretical Foundations of Modern Token-Based Authentication and Authorization Protocols}
+\label{chap:theory}
+
+\section{Architectural Breakdown of the Four Core OAuth 2.0 Actors (RFC 6749)}
+\label{sec:oauth-actors}
+OAuth 2.0 formalizes a distributed authorization architecture through four distinct actors whose interactions are defined by explicit trust boundaries and carefully scoped responsibilities. The Resource Owner represents the principal who ultimately controls the protected assets, such as personal data or delegated privileges. This actor is the source of consent, but in a secure deployment the Resource Owner does not directly expose credentials to downstream services. Instead, consent is expressed through an authorization grant that binds scope, audience, and temporal constraints. The Client Application is the entity requesting access on behalf of the Resource Owner, and it operates within a trust boundary that is separate from the Resource Server. The client is permitted to request tokens, but it is not a validator of those tokens by default; its function is to initiate authorization, present proof of possession or authorization code, and handle the token exchange flow. The Authorization Server, often realized as an Identity Provider, is the authoritative issuer of tokens and the only actor entrusted with authenticating the Resource Owner. Its trust domain is defined by its ability to generate cryptographically bound assertions and enforce policies such as consent, scope filtering, and session state. Finally, the Resource Server hosts protected resources and validates incoming access tokens to enforce authorization. Its trust boundary is orthogonal to the Authorization Server, and it must apply strict verification of token integrity, issuer, audience, and temporal validity.
+
+This separation of responsibilities contrasts sharply with the legacy password-sharing anti-pattern in which the client or downstream service directly receives and handles Resource Owner credentials. In that model, the blast radius of compromise is systemic: any party holding the password becomes an implicit superuser, and credential leakage compromises all services that reuse or trust the same credential. OAuth 2.0 and related assertion-based frameworks replace direct credential propagation with token delegation, where the Authorization Server issues signed assertions with scoped privileges and explicit lifetimes. The decoupled architecture shifts token validation perimeters away from localized codebases by introducing a dedicated trust anchor in the Authorization Server and by imposing verification duties on Resource Servers rather than on every client or intermediary. As a result, authorization decisions become a function of cryptographically verifiable claims rather than shared secrets, enabling distributed systems to enforce uniform policy while reducing the exposure of primary credentials.
+
+\section{Cryptographic Token Taxonomy}
+\label{sec:token-taxonomy}
+Token-based security architectures typically differentiate between access tokens and identity tokens because they serve distinct authorization and authentication goals. Access tokens embody delegated authorization and are presented to Resource Servers to obtain protected resources, while identity tokens encapsulate assertions about authentication events and subject identity for consumption by clients. This distinction is not semantic alone; it determines the intended consumer, the verification path, and the way claims are interpreted within a distributed security boundary. A rigorous comparison clarifies the operational role of each token class and the specification families that govern their issuance and validation.
+
+\begin{table}[htbp]
+    \centering
+    \small
+    \setlength{\tabcolsep}{4pt}
+    \renewcommand{\arraystretch}{1.2}
+    \caption{Access Token and ID Token Comparison Matrix}
+    \label{tab:token-comparison}
+    \begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.22\textwidth} >{\raggedright\arraybackslash}p{0.34\textwidth} >{\raggedright\arraybackslash}p{0.34\textwidth}@{}}
+        \toprule
+        \textbf{Dimension} & \textbf{Access Token} & \textbf{ID Token} \\
+        \midrule
+        Core Intent/Purpose & Delegated authorization to access protected resources and APIs under scoped privileges. & Authentication assertion describing the subject and the authentication event. \\
+        Primary Consumer Node & Resource Server or API gateway enforcing authorization. & Client Application validating user identity and session context. \\
+        Cryptographic Structure/Format & Frequently opaque, but may be structured JWT for self-contained validation. & Structured JWT with standardized claims for interoperability. \\
+        Profiles and Specifications & OAuth 2.0 (RFC 6749) and profile-specific constraints. & OpenID Connect Core with claim semantics and authentication context. \\
+        Typical Lifespan Constraints & Short-lived, often minutes, to reduce exposure from token theft. & Short-lived but aligned with session policies and re-authentication requirements. \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The access token is therefore a minimal, resource-centric bearer or proof-of-possession artifact, whereas the ID token is a subject-centric assertion that binds authentication context to an audience. In distributed systems, confusing these roles leads to authorization flaws such as accepting ID tokens at resource boundaries, or using access tokens to infer identity without verifying audience and issuer constraints. The operational separation also encourages targeted validation paths: access tokens are validated by resource servers against expected scopes and audiences, while ID tokens are validated by clients to establish user identity and session integrity.
+
+\section{Anatomy and Cryptographic Deconstruction of JSON Web Tokens (JWT)}
+\label{sec:jwt-anatomy}
+JSON Web Tokens encode security assertions in a compact, URL-safe format that is designed to be transported across heterogeneous systems. A JWT is composed of three Base64URL-encoded segments: the header, the payload, and the signature. The header declares the token metadata, including the signing algorithm (for example, \texttt{alg} set to \texttt{HS256} or \texttt{RS256}) and an optional key identifier (\texttt{kid}) to support key rotation. The payload carries the claims, including registered claims such as issuer (\texttt{iss}), subject (\texttt{sub}), audience (\texttt{aud}), and temporal bounds (\texttt{iat}, \texttt{exp}). These claims are not confidential by default and must be treated as integrity-protected but publicly readable data unless explicitly encrypted via JWE. The signature binds the header and payload to an issuing authority and enables integrity verification across distributed resource servers.
+
+Base64URL encoding is a transport encoding, not a cryptographic protection mechanism. Formally, it encodes binary input into an ASCII-safe representation by substituting URL-safe characters and typically omitting padding. If $\mathrm{b64url}(x)$ denotes the Base64URL encoding of input $x$, then the signing input is the concatenation of the encoded header and payload, separated by a period. The JWT structure can be expressed as:
+\begin{equation}
+\label{eq:jwt-structure}
+\mathrm{JWT} = \mathrm{b64url}(\mathrm{Header}) \Vert \texttt{"."} \Vert \mathrm{b64url}(\mathrm{Payload}) \Vert \texttt{"."} \Vert \mathrm{b64url}(\mathrm{Signature})
+\end{equation}
+Encoding does not provide confidentiality, and therefore any sensitive claim placed in the payload becomes observable to intermediaries. The security of the JWT thus depends on correct signature verification and contextual validation of claims rather than secrecy.
+
+The signature generation process binds the header and payload to a key and algorithm. Let $S = \mathrm{b64url}(\mathrm{Header}) \Vert \texttt{"."} \Vert \mathrm{b64url}(\mathrm{Payload})$ denote the signing input. For a symmetric scheme such as HS256, the signature is computed using an HMAC keyed by a shared secret $K$:
+\begin{equation}
+\label{eq:jwt-hs256}
+\mathrm{Sig}_{\mathrm{HS256}} = \mathrm{HMAC}_{\mathrm{SHA256}}(K, S)
+\end{equation}
+For an asymmetric scheme such as RS256, the issuer signs the hash of $S$ using the private key $K_{priv}$:
+\begin{equation}
+\label{eq:jwt-rs256}
+\mathrm{Sig}_{\mathrm{RS256}} = \mathrm{RSA\_Sign}_{K_{priv}}\big(\mathrm{SHA256}(S)\big)
+\end{equation}
+Verification recomputes or validates the signature and confirms that $S$ is unmodified, which cryptographically binds the claims to the issuer and prevents tampering when the correct algorithm and key are enforced.
+
+\section{Cryptographic Signing Schemes: Symmetric vs. Asymmetric Paradigms}
+\label{sec:signing-schemes}
+HS256 and RS256 represent two fundamentally different security models for token issuance and validation. HS256 uses a shared secret that must be known by both the issuer and any service that validates the token. This simplicity yields efficient signing and verification, but it implies that every validating resource server holds the same secret, which increases the blast radius if any single resource server is compromised. In distributed architectures, the symmetric model can become operationally fragile because secret distribution, rotation, and compartmentalization are challenging to maintain at scale. Any leakage of the shared secret enables adversaries to mint valid tokens, thereby undermining the trust boundary between issuer and resource server.
+
+RS256 implements an asymmetric paradigm in which the Identity Provider alone holds the private signing key $K_{priv}$, while resource servers validate signatures using the corresponding public key $K_{pub}$. The public key is typically distributed through a JSON Web Key Set (JWKS) endpoint, enabling automated key rotation and verification without exposing the signing secret. Verification can be formalized as:
+\begin{equation}
+\label{eq:jwt-verify}
+\mathrm{Verify}_{K_{pub}}\big(\mathrm{Sig}_{\mathrm{RS256}}, S\big) = \mathrm{true}
+\end{equation}
+This model ensures that a compromise of one resource server does not allow an attacker to forge new tokens, because the attacker never gains access to $K_{priv}$. As a result, the asymmetric approach significantly limits compromise proliferation in decentralized architectures and enables a strict separation between token issuance authority and token validation nodes, aligning with the principle of least privilege and reducing systemic risk.
+
+\section{Tooling and Documentation Foundations}
+\label{sec:tooling-foundations}
+The theoretical foundation of this project includes an explicit mapping between protocol semantics and the capabilities of the tooling used to validate them. Keycloak is treated as the authoritative IdP for realm configuration, token issuance, and JWKS publication, enabling controlled evaluation of OAuth 2.0 and OIDC parameters under both weak and hardened policies. FastAPI and PyJWT provide the application-level enforcement surface for token verification, while \texttt{pytest} supplies the formal automation layer needed to express security requirements as repeatable assertions. Docker Compose provides deterministic service topology and network isolation, and diagnostic tooling such as JWT.io, Postman, and cURL supports controlled inspection and adversarial request crafting at the protocol boundary.
+
+Project documentation and external standards are treated as primary theoretical references rather than ancillary materials. The standards corpus (for example, RFCs for OAuth 2.0, JWT, PKCE, and related extensions) and vendor documentation are used to define invariant protocol behavior, claim semantics, and algorithm constraints. This theoretical framing guides the experimental design in later chapters and ensures that implementation choices and security validations are grounded in authoritative source material rather than ad hoc assumptions.
+
+\chapter{Laboratory Testbed Design and Environment Isolation}
+\label{chap:testbed}
+
+\section{Identity Provider (IdP) Selection Evaluation: Keycloak vs. Cloud-Based IdPs}
+\label{sec:idp-selection}
+The selection of a self-hosted Keycloak Identity Provider is a deliberate methodological choice driven by the security objectives of this laboratory. Managed cloud IdPs such as Auth0 and Okta provide robust, production-grade controls, but their strength is precisely what makes them unsuitable for adversarial experimentation. A security evaluation that aims to discover and validate weak configurations must operate under full administrative autonomy, including access to realm-level policies, token issuance templates, signature verification parameters, and protocol toggles that are often hidden or immutable in managed environments. Keycloak allows the research process to expose the identity core as a controllable system rather than a black-box service, enabling the measurement of both failure modes and remediation effects with strong causal attribution.
+
+Self-hosting is particularly important for testing the boundaries of protocol correctness. Cloud IdPs are designed to prevent unsafe settings, which is operationally desirable in production but analytically restrictive in a laboratory environment where the objective is to observe misconfiguration impact. In this study, the ability to enable legacy or deprecated flows, intentionally relax token validation, adjust lifetimes beyond recommended values, or alter signature header behavior is essential for reproducing known vulnerability classes and quantifying their operational blast radius. Keycloak supports explicit configuration of token lifespans, client capabilities, and algorithm constraints at the realm and client levels, which permits controlled weakening of cryptographic policy for empirical analysis. This level of precision cannot be guaranteed with managed IdPs, where provider-side mitigations may silently override or constrain unsafe settings, obscuring the conditions required for meaningful security experimentation.
+
+\section{Isolated Network Architecture and Component Topology}
+\label{sec:isolation-topology}
+The laboratory testbed is constructed as a multi-tier distributed architecture that mirrors a segmented enterprise environment while remaining fully reproducible. The topology is organized around three primary nodes: a client tier responsible for initiating authorization flows, a central Identity Provider that acts as the authorization authority, and a decoupled FastAPI Resource Server that enforces access controls at the service boundary. Each node is encapsulated within a containerized runtime to provide deterministic configuration, controlled dependencies, and clean reset capability between experiments. This approach creates a well-defined trust boundary around each node and allows for precise observation of how token validation behavior changes across tiers.
+
+Network isolation is achieved by deploying the components onto a dedicated Docker network that emulates a private service plane. The client tier interacts with the Identity Provider via standard OAuth 2.0 and OpenID Connect endpoints, while the Resource Server accepts bearer tokens over stateless HTTP/REST interfaces. The design ensures that no implicit trust is granted across tiers: the client does not validate tokens, the Identity Provider does not access protected resources, and the Resource Server does not authenticate users directly. This separation enables a clear mapping between protocol behavior and enforcement decisions, as each request traverses a single, verifiable chain of responsibility from token issuance to resource access.
+
+\section{Comprehensive Containerized Component Specifications}
+\label{sec:container-specs}
+The containerized deployment aligns service configuration with the intended security model and provides a stable environment for repeated experimentation. The Identity Provider node runs the official Keycloak container image and exposes port 8080 for administrative access and protocol endpoints. Realm state, cryptographic material, and client settings are persisted through mounted volumes to ensure consistent behavior across restarts, while environment variables define administrative credentials and bootstrap configuration. The client node is implemented as a Python-driven application tier that exercises both front-channel and back-channel interactions, enabling direct control over authorization requests, token exchange, and proof mechanisms. The Resource Server node runs a lightweight FastAPI application that validates inbound bearer tokens, checks issuer and audience claims, and authorizes access to high-privilege routes only after cryptographic verification passes.
+
+The following configuration illustrates the structured service topology, shared network, and environment definitions used to emulate a production-grade security boundary in a controlled lab setting.
+
+\begin{lstlisting}[language=yaml,caption={Containerized testbed topology for Keycloak, client tier, and FastAPI resource server},label={lst:docker-compose}]
+version: "3.9"
+
+services:
+    keycloak:
+        image: quay.io/keycloak/keycloak:24.0
+        command: ["start-dev", "--http-port=8080"]
+        environment:
+            KEYCLOAK_ADMIN: admin
+            KEYCLOAK_ADMIN_PASSWORD: admin
+        ports:
+            - "8080:8080"
+        volumes:
+            - keycloak_data:/opt/keycloak/data
+        networks:
+            - lab_net
+
+    resource_server:
+        build: ./secure_server
+        environment:
+            OIDC_ISSUER: http://keycloak:8080/realms/security-lab
+            OIDC_AUDIENCE: fastapi-resource
+            JWKS_URL: http://keycloak:8080/realms/security-lab/protocol/openid-connect/certs
+        ports:
+            - "8000:8000"
+        depends_on:
+            - keycloak
+        networks:
+            - lab_net
+
+    client:
+        build: ./scripts
+        environment:
+            OIDC_ISSUER: http://keycloak:8080/realms/security-lab
+            CLIENT_ID: lab-client
+            CLIENT_SECRET: lab-secret
+            REDIRECT_URI: http://localhost:9000/callback
+        depends_on:
+            - keycloak
+            - resource_server
+        networks:
+            - lab_net
+
+networks:
+    lab_net:
+        driver: bridge
+
+volumes:
+    keycloak_data:
+\end{lstlisting}
+
+This composition ensures that each service is reachable only through the controlled lab network, preserving the integrity of experimental variables such as token lifecycle parameters and verification strategy. By anchoring the Resource Server to a predictable JWKS endpoint and a fixed issuer claim, the testbed enables deterministic validation logic that can be systematically stressed by manipulated tokens or boundary-case claims.
+
+\section{Diagnostic Utilities and Analytical Tooling}
+\label{sec:diagnostics}
+The experimental workflow relies on a set of diagnostic utilities that provide both infrastructure control and protocol visibility. Docker Compose serves as the orchestration backbone, enabling deterministic startup order, consistent network isolation, and rapid teardown between test runs. Its declarative configuration ensures that service versions, environment variables, and network boundaries remain fixed across iterations, which is essential for attributing observed behavior to security variables rather than infrastructure drift. The orchestration layer also facilitates rapid pivoting between vulnerable and hardened configurations by allowing controlled changes to environment variables and service command flags.
+
+JWT.io is used as a structural inspection and manipulation utility for tokens. Its visual deconstruction of the header, payload, and signature provides immediate visibility into cryptographic metadata and claim structure, while controlled tampering of claims and algorithm fields allows for targeted testing of validation logic. Postman and cURL complement this by enabling raw HTTP request crafting outside of browser constraints. They are used to send authorization requests, token exchanges, and resource access attempts with carefully manipulated headers, query parameters, and bearer tokens. This toolchain provides an end-to-end experimental pipeline that couples infrastructure isolation with precise protocol-level inspection and adversarial request generation.
+
+\chapter{Scenario Implementation, Vulnerability Realization, and Attack Simulation}
+\label{chap:scenario}
+
+\section{Intentional Security Degradation of the Identity Provider}
+\label{sec:intentional-degrade}
+The vulnerability phase begins with explicit, controlled degradation of the Keycloak realm and client configuration to emulate a legacy deployment where operational constraints or administrative drift have weakened protocol controls. In the vulnerable client configuration, the deprecated implicit flow is deliberately enabled while the standard authorization code flow is disabled, thereby forcing token delivery through the browser front channel. This design choice introduces a predictable exposure pathway for access tokens, as they can appear in URLs or browser storage during redirect processing. In parallel, the access token lifetime is expanded to 36,000 seconds (10 hours), which materially increases the time window in which a leaked or intercepted token remains valid. The configuration also adopts a permissive wildcard redirect URI pattern, specifically \texttt{https://jwt.io/*}, which weakens redirect target validation and makes it possible for adversaries to capture tokens by controlling or abusing redirection surfaces.
+
+Each of these modifications broadens the attack surface in a distinct and compounding manner. Enabling the implicit flow removes the confidentiality guarantees associated with back-channel exchanges and makes the token transit path observable within client-side contexts. A 10-hour token lifespan creates a persistent bearer credential that can be reused long after its issuance, undermining temporal containment strategies and complicating detection. The wildcard redirect URI expands the acceptable destination set for tokens, which transforms the redirect validation step into a permissive gate that can be bypassed through crafted URLs. Together, these choices simulate a realistic misconfiguration profile in which protocol-level safeguards are weakened at multiple layers, providing a fertile environment for testing forged token acceptance and boundary enforcement in the resource server.
+
+\section{Baseline Authentication Flow Execution}
+\label{sec:baseline-flow}
+Before introducing adversarial manipulation, the nominal authentication flow is executed to confirm that the system behavior is coherent under the intentionally weakened configuration. The client application initiates the authorization request against the Identity Provider, which authenticates the user and issues a token in the front channel according to the implicit flow semantics. This baseline flow validates the operational continuity of the testbed and establishes a ground truth for comparison when the token is later mutated or forged.
+
+Because the implicit flow returns tokens through the browser-facing channel, the resulting JWT is immediately observable and extractable within the client context. This exposure is not simply a convenience for the attacker; it is a structural vulnerability that undermines the confidentiality assumptions usually protected by back-channel token exchanges. The baseline execution therefore serves a dual purpose: it confirms protocol viability while also demonstrating that the default delivery path already aligns with an adversary model in which token material can be captured and modified.
+
+\section{Mechanics of the Signature Bypass Attack (\texttt{alg: none})}
+\label{sec:alg-none}
+The signature bypass attack is executed by transforming a legitimate JWT into a forged token that claims elevated privileges while omitting cryptographic integrity. The procedure begins by decoding the Base64URL-encoded header and payload to expose the claim set. The attacker then mutates authorization-critical claims, most notably changing \texttt{"role": "user"} to \texttt{"role": "admin"}, while preserving ancillary claims such as issuer, audience, and timestamps to avoid triggering naive validation heuristics. This step exploits the fact that claim values are only trustworthy if the signature is verified; in an unverified context, they are attacker-controlled input.
+
+The core cryptographic exploit consists of rewriting the header field \texttt{alg} to the value \texttt{none} and then removing the signature segment entirely. Under robust validation, such a token is immediately rejected because the signature is missing and the algorithm is unsupported. However, when a validation routine decodes tokens without verifying signatures or blindly accepts the algorithm value from the header, the forged token is treated as legitimate. The exploit therefore relies on two compounding failures: trusting the user-supplied \texttt{alg} value and treating a signatureless token as structurally valid. This bypass converts the integrity of the token from a cryptographic property into a mere syntactic property, allowing privilege escalation through claim manipulation.
+
+\section{Exploitation Phase and Vulnerable Backend Analysis}
+\label{sec:exploit-analysis}
+The vulnerable FastAPI resource server is intentionally implemented to demonstrate the consequences of unverified token processing. The critical defect is a decoding path that explicitly disables signature verification and other registered claim checks while still consuming claims to authorize access. The excerpt below, taken from the experimental data export, shows a decoding routine that sets \texttt{verify\_signature} to \texttt{False} and then proceeds to authorize requests solely on a \texttt{role} claim extracted from the decoded payload. This pattern collapses the authorization boundary into a client-controlled input channel, which is precisely the condition required for the \texttt{alg: none} exploit to succeed.
+
+\begin{lstlisting}[language=Python,caption={Vulnerable JWT decoding and authorization path (signature verification disabled)},label={lst:vuln-jwt}]
+class VulnerableJwtAuth:
+    """Intentionally vulnerable JWT handler for security testing."""
+
+    def decode_unverified(self, token: str) -> Dict[str, Any]:
+        """Decode a JWT without verifying its signature or claims (vulnerable)."""
+        return jwt.decode(
+            token,
+            options={
+                "verify_signature": False,
+                "verify_aud": False,
+                "verify_iss": False,
+                "verify_exp": False,
+            },
+            algorithms=self._accepted_algorithms,
+        )
+
+        try:
+            token = self._auth.extract_bearer_token(request.headers.get("Authorization"))
+            # Intentionally insecure: decode without signature verification.
+            claims = self._auth.decode_unverified(token)
+        except Exception:
+            return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+
+        if claims.get("role") != "admin":
+            return JSONResponse(status_code=403, content={"detail": "Forbidden"})
+\end{lstlisting}
+
+The corresponding attack execution log, also captured in the phase data export, demonstrates that the forged token is accepted and that the backend responds with HTTP 200, confirming administrative access. The log includes the manipulated header and payload as well as the response from the vulnerable endpoint.
+
+\begin{lstlisting}[caption={Attacker execution output (excerpted) demonstrating forged token acceptance},label={lst:attacker-log}]
+FORGED_HEADER: {'alg': 'none', 'typ': 'JWT',
+ 'kid': 'abUchODotE6lgU9Vy-t3da2o15yX8maEDRKC2hiCI9o'}
+FORGED_PAYLOAD: {'exp': 1780091674, 'iat': 1780091374, 'auth_time': 1780091374, 'jti': '81d666c0-0c66-4d70-922d-91c0cfcde40c',
+ 'iss': 'http://localhost:8080/realms/security-lab', 'aud': 'account', 'sub': '63c4f288-e40f-493c-83e2-5ad53ce55e62', 'typ': 'Bearer',
+ 'azp': 'secure-client', 'session_state': '3987515d-e6bf-4445-bd99-1c5280925422', 'acr': '1',
+ 'allowed-origins': ['https://secure.example.com'], 'realm_access': {'roles': ['default-roles-security-lab', 'offline_access', 'uma_authorization']},
+ 'resource_access': {'account': {'roles': ['manage-account', 'manage-account-links', 'view-profile']}}, 'scope': 'openid profile email',
+ 'sid': '3987515d-e6bf-4445-bd99-1c5280925422', 'email_verified': True, 'name': 'Lab User', 'preferred_username': 'lab-user',
+ 'given_name': 'Lab', 'family_name': 'User', 'email': 'lab-user@example.com', 'role': 'admin'}
+ATTACKER_VULNERABLE_OUTPUT_START
+Status: 200
+{"message":"Welcome to the admin dashboard.","user":{"exp":1780091674,"iat":1780091374,"auth_time":1780091374,"jti":"81d666c0-0c66-4d70-922d-91c0cfcde40c",
+"iss":"http://localhost:8080/realms/security-lab","aud":"account","sub":"63c4f288-e40f-493c-83e2-5ad53ce55e62","typ":"Bearer","azp":"secure-client",
+"session_state":"3987515d-e6bf-4445-bd99-1c5280925422","acr":"1","allowed-origins":["https://secure.example.com"],
+"realm_access":{"roles":["default-roles-security-lab","offline_access","uma_authorization"]},
+"resource_access":{"account":{"roles":["manage-account","manage-account-links","view-profile"]}},
+"scope":"openid profile email","sid":"3987515d-e6bf-4445-bd99-1c5280925422","email_verified":true,
+"name":"Lab User","preferred_username":"lab-user","given_name":"Lab","family_name":"User","email":"lab-user@example.com","role":"admin"}}
+
+ATTACKER_VULNERABLE_OUTPUT_END
+\end{lstlisting}
+
+The failure mode is therefore structural rather than incidental: the validation routine treats the token as a data container rather than a cryptographic assertion. By disabling signature verification and other registered claim checks, the system implicitly trusts attacker-controlled inputs and allows the token header to dictate its own verification policy. In this design, the \texttt{alg: none} header becomes a license to bypass integrity checks, and the mutated \texttt{role} claim becomes the sole authorization signal. The result is a deterministic privilege escalation path that succeeds whenever cryptographic enforcement is omitted or when the algorithm field is accepted without a server-side allowlist. This observation underscores the requirement that token verification must be explicit, server-controlled, and algorithm-constrained to the issuer's intended signing scheme.
+
+\chapter{Defensive Strategies and Infrastructure Hardening}
+\label{chap:defense}
+
+\section{Architectural Shift: Mitigating Interception via PKCE}
+\label{sec:pkce}
+The defensive posture begins with a structural transition from the implicit flow to the authorization code flow augmented with Proof Key for Code Exchange (PKCE). In the implicit flow, access tokens are delivered through the front channel, making them observable to intermediaries and exposing them to interception or browser-based leakage. By contrast, the authorization code flow isolates token delivery to a back-channel exchange between the client and the Identity Provider, and PKCE further binds that exchange to a one-time cryptographic proof. This shift collapses the attack surface created by front-channel token exposure and ensures that the authorization code cannot be redeemed without possession of the correct verifier.
+
+PKCE (S256) introduces a verifiable linkage between the initial authorization request and the later token exchange. The client generates a high-entropy \texttt{code\_verifier}, hashes it with SHA-256, and encodes the digest using Base64URL to produce the \texttt{code\_challenge}. The authorization server records the challenge with the issued authorization code, and the token endpoint later verifies that the provided verifier maps to the stored challenge. This mechanism ensures that interception of the authorization code alone is insufficient for token redemption, thereby mitigating replay and redirect capture attacks.
+
+\begin{lstlisting}[language=Python,caption={PKCE S256 code verifier and challenge generation},label={lst:pkce}]
+def generate_code_verifier(length: int = 64) -> str:
+    """Generate a high-entropy code_verifier string."""
+    return secrets.token_urlsafe(length)[:length]
+
+
+def generate_code_challenge(code_verifier: str) -> str:
+    """Create a Base64 URL-safe SHA-256 code_challenge from the verifier."""
+    digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+\end{lstlisting}
+
+\section{The Hardened Resource Server Implementation}
+\label{sec:hardened-rs}
+The hardened FastAPI resource server implements strict token validation using the OpenID Connect discovery metadata and JWKS distribution channel. The verification layer relies on \texttt{PyJWKClient} to fetch the active signing keys from the Keycloak JWKS endpoint, which is typically advertised at the discovery path and materialized at the \texttt{/.well-known/jwks.json} URL. This dynamic retrieval enables key rotation without redeploying resource servers, while preserving strong issuer control over signing material. In the defensive configuration, the resource server enforces \texttt{RS256} exclusively and rejects \texttt{none} or symmetric alternatives such as \texttt{HS256} by applying a server-side algorithm allowlist prior to signature verification.
+
+The verification logic also enforces registered claim validation. Issuer (\texttt{iss}) and audience (\texttt{aud}) are strictly matched against configured values, and expiration (\texttt{exp}) is required and verified to prevent acceptance of stale tokens. The following excerpt from the secure server implementation, extracted from the empirical data export, demonstrates explicit algorithm checks, JWKS key acquisition, and claim validation using the PyJWT library.
+
+\begin{lstlisting}[language=Python,caption={Secure JWT validation with JWKS and RS256 enforcement},label={lst:secure-jwt}]
+class SecureJwtAuth:
+    """JWT validator that enforces RS256 and standard claim checks."""
+
+    def verify_and_decode(self, token: str) -> Dict[str, Any]:
+        """Verify the JWT signature and validate registered claims."""
+        header = jwt.get_unverified_header(token)
+        if header.get("alg") != self._settings.allowed_algorithm:
+            raise InvalidAlgorithmError("Unsupported JWT algorithm.")
+
+        signing_key = self._jwks_client.get_signing_key_from_jwt(token)
+        return jwt.decode(
+            token,
+            key=signing_key.key,
+            algorithms=[self._settings.allowed_algorithm],
+            issuer=self._settings.issuer,
+            audience=self._settings.audience,
+            options={
+                "require": ["exp", "iss", "aud"],
+                "verify_signature": True,
+                "verify_exp": True,
+                "verify_aud": True,
+                "verify_iss": True,
+            },
+        )
+
+        try:
+            token = self._auth.extract_bearer_token(request.headers.get("Authorization"))
+            claims = self._auth.verify_and_decode(token)
+        except ExpiredSignatureError:
+            return JSONResponse(status_code=401, content={"detail": "Token expired."})
+        except (InvalidSignatureError, InvalidAlgorithmError):
+            return JSONResponse(status_code=401, content={"detail": "Invalid token signature."})
+\end{lstlisting}
+
+\section{Session Lifespan Constriction and Refresh Token Rotation (RTR)}
+\label{sec:rtr}
+Token lifespan constriction is a critical element of defensive hardening because bearer tokens are transferable credentials whose compromise cannot be revoked without explicit server-side controls. The secure configuration reduces access token lifetime to a short window, approximately five minutes, which sharply limits the operational value of any leaked token. This approach transforms token theft from a persistent risk into a transient event, thereby improving the efficacy of detection and incident response. Short lifetimes also reduce the probability that compromised tokens remain valid long enough to be replayed across multiple service boundaries.
+
+Refresh Token Rotation (RTR) further strengthens session integrity by ensuring that each refresh token is single-use. Upon refresh, the previously issued token is invalidated and replaced with a new value, and any attempt to reuse the prior token is treated as an indicator of compromise. This mechanism is particularly important in distributed environments where refresh tokens may transit through multiple clients or intermediaries. RTR enforces a monotonic chain of refresh operations and surfaces replay attempts as anomalous events, enabling the identity provider to revoke sessions proactively and prevent silent token reuse.
+
+\section{Mitigation Proof: Exploit Rejection and Validation}
+\label{sec:mitigation-proof}
+The effectiveness of the defensive controls is validated by replaying the exact \texttt{alg: none} token forgery attempt against the hardened resource server. The attacker script submits a forged token identical in structure to the vulnerable scenario, yet the secure server rejects it due to signature and algorithm enforcement. The raw execution log below demonstrates that the request is blocked with HTTP 401 and a signature validation error response, providing empirical confirmation that the mitigation path is effective.
+
+\begin{lstlisting}[caption={Attacker output against hardened server showing rejection},label={lst:secure-reject}]
+ATTACKER_SECURE_OUTPUT_START
+Status: 401
+{"detail":"Invalid token signature."}
+
+ATTACKER_SECURE_OUTPUT_END
+\end{lstlisting}
+
+This outcome validates the defensive architecture on two levels: cryptographic enforcement prevents acceptance of unsigned tokens, and strict algorithm filtering ensures that the server does not defer to attacker-supplied header semantics. In combination with short-lived tokens and refresh rotation, the hardened system restores the integrity boundary between issuer and resource server and converts previously exploitable paths into controlled, observable rejection events.
+
+\chapter{Automated Integration and Empirical Verification Test Results}
+\label{chap:qa}
+
+\section{Automated Security Testing Methodology}
+\label{sec:qa-method}
+The final QA validation phase is implemented using the Python \texttt{pytest} automation framework, which enables deterministic, repeatable security assertions across isolated service configurations. The test suite is designed to encode the security posture of both vulnerable and hardened systems as explicit, programmatic expectations. In the vulnerable configuration, the suite validates that a forged token with \texttt{alg: none} and an elevated \texttt{role} claim is accepted and yields HTTP 200, thereby confirming that the attack simulation is operational and measurable. In the secure configuration, the same forged token is expected to be rejected with HTTP 401, which verifies that signature enforcement, algorithm allowlisting, and claim validation are consistently active.
+
+This dual assertion strategy is not a mere functional test; it is a security regression guardrail. It ensures that the vulnerability demonstration remains reproducible for research integrity while simultaneously proving that the hardened path enforces cryptographic verification under identical request semantics. By encoding these checks at the integration layer, the test suite captures real HTTP behavior across the complete IdP-client-resource-server chain rather than relying on unit-level assumptions about cryptographic correctness.
+
+\section{Empirical Test Execution and Log Analysis}
+\label{sec:qa-logs}
+The following terminal output shows the full execution of the \texttt{pytest} suite as captured in the raw data export. The logs confirm that all tests pass, including the deliberate acceptance of the forged token in the vulnerable path and the enforced rejection in the hardened path. This 100\% pass rate demonstrates both the correctness of the exploit simulation and the effectiveness of the defensive controls.
+
+\begin{lstlisting}[caption={Pytest execution output for security flow validation},label={lst:pytest-log}]
+============================= test session starts =============================
+platform win32 -- Python 3.12.4, pytest-8.2.2, pluggy-1.6.0 -- E:\University\Semester 8\Network Security\Project\DistributedAuthSecurityAnalysis\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: E:\University\Semester 8\Network Security\Project\DistributedAuthSecurityAnalysis
+plugins: anyio-4.13.0
+collected 3 items                                                              
+
+tests/test_security_flows.py::TestOidcSecurity::test_vulnerable_accepts_forged_token PASSED [ 33%]
+tests/test_security_flows.py::TestOidcSecurity::test_secure_rejects_forged_token PASSED [ 66%]
+tests/test_security_flows.py::TestOidcSecurity::test_secure_rejects_expired_token PASSED [100%]
+
+============================= 3 passed in 12.43s =============================
+\end{lstlisting}
+
+\section{Significance of Security Regressions in DevSecOps}
+\label{sec:devsecops}
+Automated integration tests represent a foundational control in DevSecOps pipelines because they convert security assumptions into enforceable, continuously evaluated constraints. When embedded into CI/CD workflows, these tests provide immediate feedback whenever a change modifies token validation behavior, such as removing JWKS checks or relaxing algorithm restrictions. The result is a self-policing security boundary that is enforced by the build system rather than by manual review alone.
+
+From an architectural perspective, this approach prevents security drift in distributed environments where multiple teams contribute to identity and authorization logic. By ensuring that forged tokens are rejected under the hardened path and accepted only within explicitly vulnerable test environments, the QA framework guarantees that future development cannot inadvertently reintroduce the same validation flaws. In effect, automated security regression testing becomes a permanent guardrail that preserves cryptographic integrity and reinforces a disciplined, policy-driven approach to token verification.
+
+\chapter{Conclusion and Security Recommendations}
+\label{chap:conclusion}
+
+\section{Conclusion and Key Findings}
+\label{sec:conclusion}
+This study demonstrates that distributed authentication and authorization systems are only as strong as their most permissive validation boundary. The empirical findings show that misconfigurations in identity issuance and token verification can transform otherwise standardized OAuth 2.0 and OIDC flows into bypassable trust channels, particularly when validation is reduced to syntactic parsing rather than cryptographic verification. The intentional weakening of realm and client settings, coupled with a vulnerable token decoding path, revealed how front-channel exposure, excessive token lifetimes, and permissive redirect targets amplify the consequences of weak validation logic. Conversely, the hardened architecture restored the integrity of the authorization perimeter by enforcing asymmetric cryptographic verification, strict claim validation, and defensible token lifecycles.
+
+The most critical lesson is the catastrophic nature of programmatic validation flaws such as the \texttt{alg: none} bypass. When a resource server accepts header-directed algorithms or disables signature checks, it forfeits the integrity guarantees that are foundational to token-based security. In such cases, the attacker becomes the issuer, and any authorization decision derived from token claims is reduced to attacker-controlled input. The secure configuration demonstrates that enforcing asymmetric verification, anchored in centralized IdPs and JWKS-based key distribution, is not optional but essential for maintaining consistent authorization semantics in distributed environments.
+
+\section{Security Recommendations for Cloud-Native Architectures}
+\label{sec:recommendations}
+Cloud-native microservices should adopt a security baseline that assumes hostile networks and untrusted client contexts. Public clients must use PKCE with the authorization code flow to prevent interception of authorization codes and eliminate front-channel token leakage. Resource servers must validate tokens against a strict allowlist of algorithms (for example, \texttt{RS256}) and must reject unsigned tokens and symmetric alternatives that are incompatible with the issuer's signing policy. JWKS-based key retrieval should be mandatory, with issuer and audience validation enforced as first-class requirements rather than optional checks.
+
+Operationally, refresh token rotation and short-lived access tokens should be standard practice to reduce replay windows and provide a measurable signal for compromise. Security regression tests that assert both acceptance and rejection paths must be integrated into CI/CD pipelines to prevent accidental erosion of validation logic. By combining PKCE, strict JWKS validation, RTR, and automated regression tests, organizations can maintain robust authorization perimeters and prevent future reintroduction of token handling vulnerabilities.
+
+\clearpage
+\addcontentsline{toc}{chapter}{Bibliography}
+\begin{thebibliography}{99}
+\bibitem{ref-ieee-uxae} IEEE, ``\href{run:./References/10.1109\_usbereit58508.2023.10158865\_uxae (1).pdf}{IEEE Conference Paper 10.1109 usbereit58508.2023.10158865 uxae},'' 2023.
+\bibitem{ref-labtainers} NCS, ``\href{run:./References/17NCS-Labtainers-Framework.pdf}{Labtainers Framework (17NCS)},'' Accessed 2026.
+\bibitem{ref-25882618} Document, ``\href{run:./References/25882618.pdf}{Document 25882618},'' Accessed 2026.
+\bibitem{ref-id5662} Document, ``\href{run:./References/51.+ID5662\_1834-1852.pdf}{ID5662 1834-1852},'' Accessed 2026.
+\bibitem{ref-owasp-a01} OWASP, ``\href{run:./References/A01 Broken Access Control - OWASP Top 10\_2021.html}{OWASP Top 10 (2021) - A01: Broken Access Control},'' 2021.
+\bibitem{ref-electronics} MDPI, ``\href{run:./References/electronics-12-00940.pdf}{Electronics 12-00940},'' 2023.
+\bibitem{ref-jwt-exploit} Auth0, ``\href{run:./References/exploiting-jwt-vulnerabilities.pdf}{Exploiting JWT Vulnerabilities},'' Accessed 2026.
+\bibitem{ref-oidc-core} OpenID Foundation, ``\href{run:./References/Final\_ OpenID Connect Core 1.0 incorporating errata set 2.html}{OpenID Connect Core 1.0 (Errata Set 2)},'' 2014.
+\bibitem{ref-free-chapter} Document, ``\href{run:./References/free-chapter-v1.0.0.pdf}{Free Chapter v1.0.0},'' Accessed 2026.
+\bibitem{ref-vrancken} J. Vrancken, ``\href{run:./References/Joren\_Vrancken\_\_\_4593847\_\_\_A\_Methodology\_for\_Penetration\_Testing\_Docker\_Systems.pdf}{A Methodology for Penetration Testing Docker Systems},'' Accessed 2026.
+\bibitem{ref-jwt-claims} IETF, ``\href{run:./References/json-web-token-claims.md}{JSON Web Token Claims},'' Accessed 2026.
+\bibitem{ref-okta-overview} Okta Developer, ``\href{run:./References/OAuth 2.0 and OpenID Connect overview \_ Okta Developer.html}{OAuth 2.0 and OpenID Connect Overview},'' Accessed 2026.
+\bibitem{ref-okta-release} Okta, ``\href{run:./References/Q2 Okta Platform Release Overview.pdf}{Okta Platform Release Overview (Q2)},'' Accessed 2026.
+\bibitem{ref-rfc6749} IETF, ``\href{run:./References/rfc6749.html}{RFC 6749 - The OAuth 2.0 Authorization Framework},'' 2012.
+\bibitem{ref-rfc7517} IETF, ``\href{run:./References/rfc7517.html}{RFC 7517 - JSON Web Key (JWK)},'' 2015.
+\bibitem{ref-rfc7519} IETF, ``\href{run:./References/rfc7519.html}{RFC 7519 - JSON Web Token (JWT)},'' 2015.
+\bibitem{ref-rfc7636} IETF, ``\href{run:./References/rfc7636.html}{RFC 7636 - Proof Key for Code Exchange (PKCE)},'' 2015.
+\bibitem{ref-rfc7662} IETF, ``\href{run:./References/rfc7662.html}{RFC 7662 - OAuth 2.0 Token Introspection},'' 2015.
+\bibitem{ref-rfc8252} IETF, ``\href{run:./References/rfc8252.html}{RFC 8252 - OAuth 2.0 for Native Apps},'' 2017.
+\bibitem{ref-rfc8705} IETF, ``\href{run:./References/rfc8705.pdf}{RFC 8705 - OAuth 2.0 Mutual-TLS Client Authentication and Certificate-Bound Tokens},'' 2020.
+\bibitem{ref-rfc9449} IETF, ``\href{run:./References/rfc9449.pdf}{RFC 9449 - OAuth 2.0 Demonstrating Proof of Possession (DPoP)},'' 2023.
+\bibitem{ref-rfc9700} IETF, ``\href{run:./References/rfc9700.pdf}{RFC 9700 - OAuth 2.0 Security Best Current Practice},'' 2024.
+\bibitem{ref-phase1} Project Documentation, ``\href{run:./References/Phase 1 Theoretical Foundations of Modern Authentication and Authorization Protocols.pdf}{Phase 1 - Theoretical Foundations of Modern Authentication and Authorization Protocols},'' 2026.
+\bibitem{ref-phase2} Project Documentation, ``\href{run:./References/Phase 2 Laboratory Environment Design and Tool Specification.pdf}{Phase 2 - Laboratory Environment Design and Tool Specification},'' 2026.
+\bibitem{ref-phase3} Project Documentation, ``\href{run:./References/Phase 3 Scenario Implementation and Attack Simulation.pdf}{Phase 3 - Scenario Implementation and Attack Simulation},'' 2026.
+\bibitem{ref-phase4} Project Documentation, ``\href{run:./References/Phase 4 Defensive Strategies and Infrastructure Hardening.pdf}{Phase 4 - Defensive Strategies and Infrastructure Hardening},'' 2026.
+\end{thebibliography}
+
+\end{document}
